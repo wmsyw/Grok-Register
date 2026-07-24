@@ -718,15 +718,20 @@ func (e *Engine) pWorker(ctx context.Context, id int) {
 			continue
 		}
 		// Castle request token on create-email (protobuf field 3). Missing token → low-trust SSO.
-		castleCreate, cerr := castle.Mint(ctx, castle.Options{
-			Proxy:   e.opt.Cfg.RegisterProxy,
-			URL:     protocol.SiteURL + "/sign-up",
-			Timeout: 60 * time.Second,
-		})
-		if cerr != nil {
-			log.Debugf("[P%d] castle mint (create-email): %v", id, cerr)
-			// still try without castle; success rate lower
-			castleCreate = ""
+		// Share physical browser cap with Turnstile to avoid concurrent Chromium crashes.
+		castleCreate := ""
+		if err := e.phys.Acquire(ctx); err == nil {
+			tok, cerr := castle.Mint(ctx, castle.Options{
+				Proxy:   e.opt.Cfg.RegisterProxy,
+				URL:     protocol.SiteURL + "/sign-up",
+				Timeout: 60 * time.Second,
+			})
+			e.phys.Release()
+			if cerr != nil {
+				log.Debugf("[P%d] castle mint (create-email): %v", id, cerr)
+			} else {
+				castleCreate = tok
+			}
 		}
 		if err := e.xai.CreateEmailCodeCastle(h.Email, castleCreate); err != nil {
 			e.qPending.Release()
@@ -795,16 +800,20 @@ func (e *Engine) cWorker(ctx context.Context, id int, scfg protocol.SignupConfig
 			log.Debugf("validate_password skip/fail %s: %v", q.Email, err)
 		}
 		// Fresh Castle token for signup Server Action (castleRequestToken).
-		castleSignup, cerr := castle.Mint(ctx, castle.Options{
-			Proxy:   e.opt.Cfg.RegisterProxy,
-			URL:     protocol.SiteURL + "/sign-up",
-			Timeout: 60 * time.Second,
-		})
-		if cerr != nil {
-			log.Debugf("castle mint (signup) %s: %v", q.Email, cerr)
-			castleSignup = ""
-		} else {
-			log.Debugf("castle signup ok len=%d", len(castleSignup))
+		castleSignup := ""
+		if err := e.phys.Acquire(ctx); err == nil {
+			tok, cerr := castle.Mint(ctx, castle.Options{
+				Proxy:   e.opt.Cfg.RegisterProxy,
+				URL:     protocol.SiteURL + "/sign-up",
+				Timeout: 60 * time.Second,
+			})
+			e.phys.Release()
+			if cerr != nil {
+				log.Debugf("castle mint (signup) %s: %v", q.Email, cerr)
+			} else {
+				castleSignup = tok
+				log.Debugf("castle signup ok len=%d", len(castleSignup))
+			}
 		}
 		body := protocol.BuildSignupBodyCastle(q.Email, q.Password, q.Code, token, castleSignup)
 		text, sso, err := e.xai.SignupServerAction(body, scfg.ActionID, scfg.StateTree)
