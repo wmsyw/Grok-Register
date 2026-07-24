@@ -97,6 +97,10 @@ async def mint(
     *,
     page_url: str,
     proxy: str,
+async def mint(
+    *,
+    page_url: str,
+    proxy: str,
     chrome: str,
     cookies: list[dict],
     timeout: float,
@@ -105,6 +109,9 @@ async def mint(
     mode: str,
 ) -> str:
     from playwright.async_api import async_playwright
+
+    # Fetch SDK in Python (page fetch is often CORS/proxy blocked).
+    sdk_js = fetch_castle_sdk(proxy)
 
     headless = mode == "headless"
     launch: dict = {
@@ -130,74 +137,90 @@ async def mint(
                 await context.add_cookies(cookies)
             page = await context.new_page()
             await page.goto(page_url, wait_until="domcontentloaded", timeout=int(timeout * 1000))
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(500)
 
-            # Inject Castle v2 correctly: fetch source then (0, eval)(src).
-            # Prefer page-local / cached script if present; else CDN.
-            inject = f"""
-async () => {{
-  const PK = {pk!r};
-  const CDN = {CDN_V2!r};
+            # Inject via (0, eval) so Castle IIFE actually runs (not dead script.textContent).
+            await page.evaluate(
+                """(code) => {
+                    (0, eval)(code);
+                    if (typeof window._castle !== 'function') {
+                        throw new Error('window._castle missing after eval inject');
+                    }
+                }""",
+                sdk_js,
+            )
 
-  function ready() {{
-    return typeof window._castle === 'function';
-  }}
-
-  async function loadSDK() {{
-    if (ready()) return true;
-    // Prefer same-origin cached copy if the app already loaded one.
-    let src = '';
-    const existing = [...document.querySelectorAll('script[src*="castle"]')];
-    for (const s of existing) {{
-      if (s.src) {{ src = s.src; break; }}
-    }}
-    if (!src) {{
-      // try common local cache path used by some frontends
-      try {{
-        const r = await fetch('/data/cf-cache/castle_v2.js', {{credentials:'include'}});
-        if (r.ok) src = URL.createObjectURL(await r.blob());
-      }} catch (e) {{}}
-    }}
-    if (!src) src = CDN;
-
-    // If already a classic script tag path works:
-    if (src.startsWith('http') || src.startsWith('/')) {{
-      await new Promise((resolve, reject) => {{
-        const s = document.createElement('script');
-        s.src = src.startsWith('http') || src.startsWith('/') ? src : CDN;
-        s.async = true;
-        s.onload = () => resolve(true);
-        s.onerror = () => reject(new Error('castle script load failed'));
-        document.head.appendChild(s);
-      }}).catch(() => null);
-    }}
-
-    if (!ready()) {{
-      // Force-eval CDN body so IIFE executes (script.textContent alone often does not).
-      const r = await fetch(CDN, {{credentials:'omit', mode:'cors'}});
-      if (!r.ok) throw new Error('castle cdn http ' + r.status);
-      const code = await r.text();
-      (0, eval)(code);
-    }}
-    if (!ready()) throw new Error('window._castle missing after inject');
-    return true;
-  }}
-
-  await loadSDK();
-  try {{ window._castle('setAppId', PK); }} catch (e) {{}}
-  // createRequestToken may be sync or Promise depending on SDK build.
-  let tok = window._castle('createRequestToken');
-  if (tok && typeof tok.then === 'function') tok = await tok;
-  if (!tok || typeof tok !== 'string' || tok.length < 20) {{
-    // retry once after short wait
-    await new Promise(r => setTimeout(r, 500));
-    tok = window._castle('createRequestToken');
-    if (tok && typeof tok.then === 'function') tok = await tok;
-  }}
-  return tok || '';
-}}
-"""
             deadline = time.time() + timeout
+            last_err = ""
+            while time.time() < deadline:
+                try:
+                    tok = await page.evaluate(
+                        """async (pk) => {
+                            if (typeof window._castle !== 'function') {
+                                throw new Error('window._castle missing');
+                            }
+                            try { window._castle('setAppId', pk); } catch (e) {}
+                            let tok = window._castle('createRequestToken');
+                            if (tok && typeof tok.then === 'function') tok = await tok;
+                            return (typeof tok === 'string') ? tok : '';
+                        }""",
+                        pk,
+                    )
+                    if tok and isinstance(tok, str) and len(tok) >= 20:
+                        return tok
+                    last_err = f"short token len={len(tok) if isinstance(tok, str) else type(tok)}"
+                except Exception as exc:
+                    last_err = f"{type(exc).__name__}: {exc}"
+                await page.wait_for_timeout(600)
+
+            try:
+                diag = await page.evaluate(
+                    """() => ({
+                      has_castle: typeof window._castle,
+                      has_Castle: typeof window.Castle,
+                      title: document.title||'',
+                    })"""
+                )
+                print(f"diag={diag} last={last_err}", file=sys.stderr)
+            except Exception:
+                print(f"last={last_err}", file=sys.stderr)
+            raise RuntimeError(f"castle timeout ({last_err})")
+        finally:
+            await browser.close()
+
+
+def fetch_castle_sdk(proxy: str) -> str:
+    """Download Castle v2 SDK using urllib (supports HTTP proxy)."""
+    import urllib.request
+
+    # Allow offline/local override.
+    for local in (
+        os.environ.get("CASTLE_JS_PATH", "").strip(),
+        "/usr/local/share/xai-reg/castle_v2.js",
+        os.path.join(os.path.dirname(__file__), "castle_v2.js"),
+    ):
+        if local and os.path.isfile(local):
+            with open(local, "r", encoding="utf-8", errors="replace") as f:
+                data = f.read()
+            if "castle" in data.lower() or "_castle" in data:
+                return data
+
+    handlers = []
+    if proxy:
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers) if handlers else urllib.request.build_opener()
+    req = urllib.request.Request(
+        CDN_V2,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+        },
+    )
+    with opener.open(req, timeout=45) as resp:
+        data = resp.read().decode("utf-8", "replace")
+    if len(data) < 100:
+        raise RuntimeError(f"castle sdk too short ({len(data)})")
+    return data
             last_err = ""
             while time.time() < deadline:
                 try:
