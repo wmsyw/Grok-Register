@@ -216,7 +216,7 @@ func (e *Engine) run(ctx context.Context) error {
 			return
 		}
 		log.Infof("[clearance] 拉起清障栈 (%s)…", reason)
-		msg, err := clearance.EnsureStack(cfg.ClearanceComposeDir, 40080, 8191)
+		msg, err := clearance.EnsureStack(cfg.ClearanceComposeDir, clearance.DefaultPrivoxyPort, clearance.DefaultFlareSolverrPort)
 		if err != nil {
 			log.Warnf("[clearance] 自动拉起失败: %v", err)
 			return
@@ -256,9 +256,9 @@ func (e *Engine) run(ctx context.Context) error {
 		}
 	}
 
-	// If config points REGISTER_PROXY at local Privoxy (40080) but stack is down,
+	// If config points REGISTER_PROXY at local Privoxy (41080) but stack is down,
 	// start it FIRST — otherwise warm spams chrome_124/120 with connection refused.
-	proxyNeedsStack := clearance.LocalClearanceProxyDown(cfg.RegisterProxy, 40080)
+	proxyNeedsStack := clearance.LocalClearanceProxyDown(cfg.RegisterProxy, clearance.DefaultPrivoxyPort)
 
 	switch clearMode {
 	case "always":
@@ -267,12 +267,12 @@ func (e *Engine) run(ctx context.Context) error {
 	case "never":
 		log.Info("[clearance] CLEARANCE_MODE=never（协议 TLS 直连/代理，无 Docker 清障）")
 		if proxyNeedsStack {
-			log.Warn("[clearance] REGISTER_PROXY 指向 :40080 但清障未运行，且 MODE=never — 请改代理或改为 auto/always")
+			log.Warn("[clearance] REGISTER_PROXY 指向 :41080 但清障未运行，且 MODE=never — 请改代理或改为 auto/always")
 		}
 	default:
 		log.Info("[clearance] CLEARANCE_MODE=auto（协议优先，CF 拦截时再拉清障）")
 		if proxyNeedsStack && cfg.ClearanceEnabled {
-			log.Info("[clearance] 检测到 REGISTER_PROXY→:40080 未监听，先起清障再 warm")
+			log.Info("[clearance] 检测到 REGISTER_PROXY→:41080 未监听，先起清障再 warm")
 			ensureClearance("proxy_down")
 		}
 	}
@@ -370,6 +370,7 @@ func (e *Engine) run(ctx context.Context) error {
 		code := protocol.CodeOf(err)
 		errStr := err.Error()
 		proxyDead := strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "41080") ||
 			strings.Contains(errStr, "40080") ||
 			strings.Contains(errStr, "connect: connection refused")
 		log.Warnf("[cf] warm failed code=%s err=%v", code, err)
@@ -881,18 +882,63 @@ func (e *Engine) oauthWorker(ctx context.Context, id int) {
 		log.Startf("OAuth %s", job.Email)
 		t0 := time.Now()
 		// SSO preview for debugging (prefix only)
-		ssoPrev := job.SSO
-		if len(ssoPrev) > 24 {
-			ssoPrev = ssoPrev[:12] + "…" + ssoPrev[len(ssoPrev)-8:]
+		ssoPrev := protocol.FormatSSOPreview(job.SSO)
+		ssoUsed := strings.TrimSpace(job.SSO)
+		plant := func(ctx context.Context, sso, successURL string) (string, error) {
+			ns, _, err := e.xai.PlantSSO(sso, successURL)
+			if err != nil {
+				log.Debugf("PlantSSO %s: %v", job.Email, err)
+				return sso, err
+			}
+			if strings.TrimSpace(ns) != "" {
+				ssoUsed = ns
+				return ns, nil
+			}
+			return sso, nil
 		}
-		cred, err := e.oauth.Exchange(ctx, job.SSO)
+		refresh := func(ctx context.Context, reason string) (string, error) {
+			// Password login CreateSession → fresh SSO when device verify rejects signup SSO.
+			pageURL := protocol.SignInURL
+			siteKey := protocol.SignInSiteKey("")
+			if cfg := e.xai.Config(); cfg.SiteKey != "" {
+				siteKey = cfg.SiteKey
+			}
+			log.Infof("CreateSession 重登 %s（原因: %s）", job.Email, truncateRunes(reason, 80))
+			if err := e.phys.Acquire(ctx); err != nil {
+				return "", err
+			}
+			tok, err := e.turn.Solve(ctx, siteKey, pageURL)
+			e.phys.Release()
+			if err != nil {
+				return "", fmt.Errorf("create_session turnstile: %w", err)
+			}
+			ns, err := e.xai.CreateSession(job.Email, job.Password, tok)
+			if err != nil {
+				return "", err
+			}
+			ssoUsed = ns
+			log.Infof("CreateSession OK %s sso=%s", job.Email, protocol.FormatSSOPreview(ns))
+			// Persist refreshed SSO for reoauth / grok2api.
+			_ = cpa.AppendSSO(filepath.Join(e.opt.Run.SSO, "accounts.txt"), job.Email, job.Password, ns)
+			if e.opt.Run.Grok2API != "" {
+				_ = cpa.AppendGrok2APIToken(e.opt.Run.Grok2API, ns)
+			}
+			return ns, nil
+		}
+
+		cred, err := e.oauth.ExchangeOpts(ctx, oauth.ExchangeOptions{
+			SSO:     ssoUsed,
+			Email:   job.Email,
+			Plant:   plant,
+			Refresh: refresh,
+		})
 		if err != nil {
 			log.Warnf("OAuth fail %s: %v (%.1fs) sso=%s", job.Email, err, time.Since(t0).Seconds(), ssoPrev)
 			e.fail.Add(1)
 			e.releaseReserve()
 			continue
 		}
-		log.Infof("OAuth ok %s (%.1fs)", job.Email, time.Since(t0).Seconds())
+		log.Infof("OAuth ok %s (%.1fs) user_code device-flow", job.Email, time.Since(t0).Seconds())
 		e.oaN.Add(1)
 		doc := cpa.FromCredential(cred, job.Email)
 		_ = e.opt.Store.Set(func(s *state.Snapshot) {
@@ -924,6 +970,21 @@ func (e *Engine) oauthWorker(ctx context.Context, id int) {
 			// seat already converted to done; count as fail but don't re-open flood
 			e.fail.Add(1)
 			continue
+		}
+		// SUB Auth (Sub2API-compatible) + Grok2API Auth JSON beside bare SSO tokens.
+		if e.opt.Run.SUB != "" {
+			if subPath, err := cpa.WriteSUBAuth(e.opt.Run.SUB, doc); err != nil {
+				log.Warnf("写 SUB auth 失败: %v", err)
+			} else {
+				log.Debugf("SUB auth %s", filepath.Base(subPath))
+			}
+		}
+		if e.opt.Run.Grok2API != "" {
+			if gPath, err := cpa.WriteGrok2APIAuth(e.opt.Run.Grok2API, doc, ssoUsed); err != nil {
+				log.Warnf("写 Grok2API auth 失败: %v", err)
+			} else {
+				log.Debugf("Grok2API auth %s", filepath.Base(gPath))
+			}
 		}
 		if e.uploader != nil && e.uploader.Enabled() {
 			up := e.uploader

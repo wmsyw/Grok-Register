@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Grok-Register 一键部署
+# XAI-Register 一键部署（与原版 Grok-Register 路径隔离）
 #
 # Linux (Debian/Ubuntu，需 root/sudo):
 #   curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | sudo bash
@@ -10,7 +10,7 @@
 #
 # 非交互（CI / 无 TTY）:
 #   curl -fsSL ... | sudo NONINTERACTIVE=1 bash
-#   curl -fsSL ... | sudo bash -s -- --yes --command grok --install-dir /opt/Grok-Register
+#   curl -fsSL ... | sudo bash -s -- --yes --command xai --install-dir /opt/XAI-Register
 #
 # 选项 / 环境变量见 --help。
 
@@ -42,7 +42,7 @@ esac
 # ---------------------------------------------------------------------------
 # 默认值
 # ---------------------------------------------------------------------------
-COMMAND_NAME="${COMMAND_NAME:-grok}"
+COMMAND_NAME="${COMMAND_NAME:-xai}"
 REPO_URL="${REPO_URL:-https://github.com/Charles-0509/Grok-Register.git}"
 BRANCH="${BRANCH:-main}"
 GO_VERSION="${GO_VERSION:-1.24.4}"
@@ -66,6 +66,7 @@ SET_AUTO_STOP=0
 _ENV_COMMAND_NAME="${COMMAND_NAME-}"
 _ENV_INSTALL_DIR="${INSTALL_DIR-}"
 _ENV_GROK_HOME="${GROK_HOME-}"
+_ENV_XAI_HOME="${XAI_HOME-}"
 _ENV_BIN_DIR="${BIN_DIR-}"
 _ENV_SHARE_DIR="${SHARE_DIR-}"
 _ENV_VENV_DIR="${VENV_DIR-}"
@@ -80,9 +81,10 @@ SET_SHARE_DIR=0
 SET_VENV_DIR=0
 SET_NET_MODE=0
 # 非默认命令名视为用户已指定
-[ -n "$_ENV_COMMAND_NAME" ] && [ "$_ENV_COMMAND_NAME" != "grok" ] && SET_COMMAND=1
+[ -n "$_ENV_COMMAND_NAME" ] && [ "$_ENV_COMMAND_NAME" != "xai" ] && SET_COMMAND=1
 [ -n "$_ENV_INSTALL_DIR" ] && SET_INSTALL_DIR=1
 [ -n "$_ENV_GROK_HOME" ] && SET_HOME=1
+[ -n "$_ENV_XAI_HOME" ] && SET_HOME=1
 [ -n "$_ENV_BIN_DIR" ] && SET_BIN_DIR=1
 [ -n "$_ENV_SHARE_DIR" ] && SET_SHARE_DIR=1
 [ -n "$_ENV_VENV_DIR" ] && SET_VENV_DIR=1
@@ -95,22 +97,24 @@ fi
 
 if [ "$OS" = "darwin" ]; then
   _HOME="${HOME:-/Users/$(id -un)}"
-  INSTALL_DIR="${INSTALL_DIR:-${_HOME}/Grok-Register}"
-  GROK_HOME_OPT="${GROK_HOME:-${_HOME}/.grok}"
+  # 与原版 ~/Grok-Register / ~/.grok / cloakbrowser-venv 完全隔离
+  INSTALL_DIR="${INSTALL_DIR:-${_HOME}/XAI-Register}"
+  GROK_HOME_OPT="${XAI_HOME:-${GROK_HOME:-${_HOME}/.xai}}"
   BIN_DIR="${BIN_DIR:-${_HOME}/.local/bin}"
-  SHARE_DIR="${SHARE_DIR:-${_HOME}/.local/share/grok-reg}"
-  VENV_DIR="${VENV_DIR:-${_HOME}/.local/share/cloakbrowser-venv}"
+  SHARE_DIR="${SHARE_DIR:-${_HOME}/.local/share/xai-reg}"
+  VENV_DIR="${VENV_DIR:-${_HOME}/.local/share/xai-cloakbrowser-venv}"
 else
-  INSTALL_DIR="${INSTALL_DIR:-/opt/Grok-Register}"
-  GROK_HOME_OPT="${GROK_HOME:-}"
+  # Linux: 不覆盖 /opt/Grok-Register、~/.grok、/opt/cloakbrowser-venv
+  INSTALL_DIR="${INSTALL_DIR:-/opt/XAI-Register}"
+  GROK_HOME_OPT="${XAI_HOME:-${GROK_HOME:-}}"
   BIN_DIR="${BIN_DIR:-/usr/local/bin}"
-  SHARE_DIR="${SHARE_DIR:-/usr/local/share/grok-reg}"
-  VENV_DIR="${VENV_DIR:-/opt/cloakbrowser-venv}"
+  SHARE_DIR="${SHARE_DIR:-/usr/local/share/xai-reg}"
+  VENV_DIR="${VENV_DIR:-/opt/xai-cloakbrowser-venv}"
 fi
 
 usage() {
   cat <<EOF
-Grok-Register 一键部署
+XAI-Register 一键部署（与原版路径隔离）
 
 平台:
   Linux  Debian/Ubuntu — 需 root/sudo，自动装 Go/Docker/系统库
@@ -122,7 +126,7 @@ Grok-Register 一键部署
   curl|bash 且无 TTY，或 NONINTERACTIVE=1 / --yes，则全用默认值（WARP 清障）。
 
 网络出口（交互或 CLI）:
-  Y / 默认     — 启用 Docker WARP+Privoxy 清障（REGISTER_PROXY=…:40080）
+  Y / 默认     — 启用 Docker WARP+Privoxy 清障（REGISTER_PROXY=…:41080）
   N            — 不用清障；可再输入本机 HTTP 代理端口（如 7890）；
                  端口直接回车 = 直连（境外 VPS 无代理）
 
@@ -130,9 +134,9 @@ Grok-Register 一键部署
   install.sh [选项]
 
 选项:
-  --command NAME        CLI 命令名（默认 grok）
+  --command NAME        CLI 命令名（默认 xai）
   --install-dir PATH    源码目录
-  --home PATH           数据目录 GROK_HOME
+  --home PATH           数据目录（XAI_HOME，默认 ~/.xai）
   --bin-dir PATH        二进制目录
   --share-dir PATH      mint 脚本目录
   --venv-dir PATH       Python venv 路径
@@ -225,11 +229,11 @@ fi
 # Linux 默认 GROK_HOME：优先真实用户 home
 if [ "$OS" = "linux" ] && [ "$SET_HOME" != 1 ] && [ -z "$GROK_HOME_OPT" ]; then
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    GROK_HOME_OPT="${REAL_HOME}/.grok"
+    GROK_HOME_OPT="${REAL_HOME}/.xai"
   elif [ "$(id -u)" -eq 0 ]; then
-    GROK_HOME_OPT="/root/.grok"
+    GROK_HOME_OPT="/root/.xai"
   else
-    GROK_HOME_OPT="${HOME:-$REAL_HOME}/.grok"
+    GROK_HOME_OPT="${HOME:-$REAL_HOME}/.xai"
   fi
 fi
 
@@ -313,7 +317,7 @@ prompt_network_exit() {
   echo "----------------------------------------------" >/dev/tty
   echo " 网络出口（WARP 清障 vs 本机代理 vs 直连）" >/dev/tty
   echo "----------------------------------------------" >/dev/tty
-  echo "  Y — 使用项目 Docker 清障栈（WARP+Privoxy，端口 40080）【默认】" >/dev/tty
+  echo "  Y — 使用项目 Docker 清障栈（WARP+Privoxy，端口 41080）【默认】" >/dev/tty
   echo "  N — 不用清障：境外 VPS 直连，或填写本机已有代理端口（如 Clash 7890）" >/dev/tty
   echo >/dev/tty
 
@@ -374,7 +378,7 @@ prompt_auto_stop() {
   echo "----------------------------------------------" >/dev/tty
   echo "  Y — 注册结束/中断后自动 docker compose stop，省内存【默认】" >/dev/tty
   echo "  N — 保持容器常开（下次 start 更快，持续占 RAM）" >/dev/tty
-  echo "  （每次 grok start 仍会检测并自动拉起未运行的清障栈）" >/dev/tty
+  echo "  （每次 xai start 仍会检测并自动拉起未运行的清障栈）" >/dev/tty
   echo >/dev/tty
   local yn="Y"
   prompt_value yn "运行结束后自动关闭清障容器" "Y"
@@ -420,7 +424,7 @@ maybe_prompt_paths() {
     prompt_value INSTALL_DIR "源码安装目录" "$INSTALL_DIR"
   fi
   if [ "$SET_HOME" != 1 ]; then
-    prompt_value GROK_HOME_OPT "数据目录 GROK_HOME" "$GROK_HOME_OPT"
+    prompt_value GROK_HOME_OPT "数据目录 XAI_HOME (~/.xai，与原版 ~/.grok 隔离)" "$GROK_HOME_OPT"
   fi
   if [ "$SET_BIN_DIR" != 1 ]; then
     prompt_value BIN_DIR "二进制目录" "$BIN_DIR"
@@ -440,7 +444,7 @@ maybe_prompt_paths() {
   echo "  venv:   $VENV_DIR" >/dev/tty
   case "$NET_MODE" in
     warp)
-      echo "  网络:   WARP 清障栈 (REGISTER_PROXY=http://127.0.0.1:40080)" >/dev/tty
+      echo "  网络:   WARP 清障栈 (REGISTER_PROXY=http://127.0.0.1:41080)" >/dev/tty
       if [ "$CLEARANCE_AUTO_STOP" = 1 ]; then
         echo "  容器:   运行结束自动 stop 清障栈" >/dev/tty
       else
@@ -499,10 +503,10 @@ apply_network_to_config() {
   case "$NET_MODE" in
     warp)
       env_set_key "$dest" "CLEARANCE_ENABLED" "1"
-      env_set_key "$dest" "REGISTER_PROXY" "http://127.0.0.1:40080"
-      env_set_key "$dest" "HTTP_PROXY" "http://127.0.0.1:40080"
-      env_set_key "$dest" "HTTPS_PROXY" "http://127.0.0.1:40080"
-      env_set_key "$dest" "FLARESOLVERR_URL" "http://127.0.0.1:8191"
+      env_set_key "$dest" "REGISTER_PROXY" "http://127.0.0.1:41080"
+      env_set_key "$dest" "HTTP_PROXY" "http://127.0.0.1:41080"
+      env_set_key "$dest" "HTTPS_PROXY" "http://127.0.0.1:41080"
+      env_set_key "$dest" "FLARESOLVERR_URL" "http://127.0.0.1:8291"
       env_set_key "$dest" "CLEARANCE_PROXY" "http://privoxy:8118"
       ;;
     proxy)
@@ -564,8 +568,8 @@ CLEARANCE_MODE=auto
 CLEARANCE_AUTO_STOP=1
 CF_IMPERSONATE=chrome_131
 CF_IMPERSONATE_FALLBACK=chrome_124,chrome_120
-REGISTER_PROXY=http://127.0.0.1:40080
-FLARESOLVERR_URL=http://127.0.0.1:8191
+REGISTER_PROXY=http://127.0.0.1:41080
+FLARESOLVERR_URL=http://127.0.0.1:8291
 CLEARANCE_PROXY=http://privoxy:8118
 CLEARANCE_URLS=https://accounts.x.ai,https://x.ai,https://status.x.ai,https://console.x.ai,https://auth.x.ai
 TURNSTILE_PROVIDER=browser
@@ -574,8 +578,8 @@ PROTOCOL_HTTP=1
 HTTP_POOL_SIZE=8
 TEMPMAIL_LOL_RETRIES=30
 TEMPMAIL_LOL_MIN_INTERVAL_MS=1500
-HTTPS_PROXY=http://127.0.0.1:40080
-HTTP_PROXY=http://127.0.0.1:40080
+HTTPS_PROXY=http://127.0.0.1:41080
+HTTP_PROXY=http://127.0.0.1:41080
 NO_PROXY=127.0.0.1,localhost
 OAUTH_MIN_INTERVAL_SEC=6
 OAUTH_RETRY_SEC=60
@@ -656,7 +660,7 @@ sync_repo() {
     if [ -e "$INSTALL_DIR" ] && [ ! -d "$INSTALL_DIR/.git" ]; then
       if ! _install_dir_is_safe "$INSTALL_DIR"; then
         die "拒绝删除非空/危险目录: $INSTALL_DIR
-请换空目录，或指定 --install-dir /opt/Grok-Register，或手动清空后再装。
+请换空目录，或指定 --install-dir /opt/XAI-Register，或手动清空后再装。
 （旧版在无 .git 时会 rm -rf 整个 INSTALL_DIR，已修复）"
       fi
       # 安全空目录或仅本项目：可删
@@ -666,14 +670,15 @@ sync_repo() {
           rmdir "$INSTALL_DIR" 2>/dev/null || true
         else
           die "目录非空且不是 Grok-Register 仓库: $INSTALL_DIR
-请使用空目录，例如: --install-dir /opt/Grok-Register"
+请使用空目录，例如: --install-dir /opt/XAI-Register"
         fi
       fi
     fi
     git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$INSTALL_DIR"
   fi
-  if [ "$OS" = "linux" ] && [ "$INSTALL_DIR" = "/opt/Grok-Register" ]; then
-    ln -sfn "$INSTALL_DIR" /opt/Grok-Reg 2>/dev/null || true
+  # 不创建 /opt/Grok-Reg 软链，避免干扰原版安装
+  if [ "$OS" = "linux" ] && [ "$INSTALL_DIR" = "/opt/XAI-Register" ]; then
+    ln -sfn "$INSTALL_DIR" /opt/XAI-Reg 2>/dev/null || true
   fi
   ok "源码: $(git -C "$INSTALL_DIR" log -1 --oneline 2>/dev/null || echo ok)"
 }
@@ -738,7 +743,7 @@ start_clearance() {
 }
 
 chown_if_sudo_user() {
-  # 数据/venv 属主改回 SUDO_USER，便于普通用户 grok start
+  # 数据/venv 属主改回 SUDO_USER，便于普通用户 xai start
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     local grp
     grp="$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")"
@@ -800,7 +805,11 @@ prepare_data_dir() {
 
 print_done() {
   local env_hint="$1"
-  export GROK_HOME="$GROK_HOME_OPT"
+  export XAI_HOME="$GROK_HOME_OPT"
+  export XAI_PYTHON="${VENV_DIR}/bin/python"
+  export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
+  export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
+  export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
   export GROK_PYTHON="${VENV_DIR}/bin/python"
   export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
   export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
@@ -817,30 +826,31 @@ print_done() {
   echo "  示例:     ${GROK_HOME_OPT}/config.env.example"
   echo "  环境:     ${env_hint}"
   case "$NET_MODE" in
-    warp)  echo "  网络:     WARP 清障 (http://127.0.0.1:40080)" ;;
+    warp)  echo "  网络:     WARP 清障 (http://127.0.0.1:41080)" ;;
     proxy) echo "  网络:     本机代理 http://127.0.0.1:${LOCAL_PROXY_PORT}" ;;
     none)  echo "  网络:     直连（无代理）" ;;
   esac
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     echo
     echo "  注意: 请用用户 ${SUDO_USER} 运行（不要长期 root）："
-    echo "    export GROK_HOME=${GROK_HOME_OPT}"
-    echo "    export GROK_PYTHON=${VENV_DIR}/bin/python"
+    echo "    export XAI_HOME=${GROK_HOME_OPT}"
+    echo "    export XAI_PYTHON=${VENV_DIR}/bin/python"
   fi
   echo
   echo "快速开始:"
   echo "  export PATH=\"\$PATH:${BIN_DIR}\""
-  echo "  export GROK_HOME=${GROK_HOME_OPT}"
-  echo "  export GROK_PYTHON=${VENV_DIR}/bin/python"
+  echo "  export XAI_HOME=${GROK_HOME_OPT}"
+  echo "  export XAI_PYTHON=${VENV_DIR}/bin/python"
   echo "  ${COMMAND_NAME} config              # 编辑配置（分区中文）"
   echo "  ${COMMAND_NAME} start"
   echo "  ${COMMAND_NAME} start -t 1 --thread 1   # 低配机请用 1 线程"
   echo "  ${COMMAND_NAME} status"
   echo "  ${COMMAND_NAME} logs -f"
   echo
-  if [ "$COMMAND_NAME" != "grok" ]; then
-    echo "提示: 命令名为 ${COMMAND_NAME}（不是 grok）。"
+  if [ "$COMMAND_NAME" != "xai" ]; then
+    echo "提示: 命令名为 ${COMMAND_NAME}（不是旧名 grok）。"
   fi
+  echo "隔离说明: 源码/数据/venv/清障容器/端口均与原版 grok 分离；可并存。"
   echo "硬件提示: 清障栈+1 浏览器约需 2GB+ RAM；1GB 机器务必 --thread 1 且保证 swap。"
   if [ "$NET_MODE" = "warp" ]; then
     echo "clearance: cd ${INSTALL_DIR}/clearance && docker compose up -d && docker compose ps"
@@ -938,7 +948,7 @@ install_linux() {
 
   echo
   echo "=============================================="
-  echo " Grok-Register 一键部署 (Linux)"
+  echo " XAI-Register 一键部署 (Linux) — 与原版隔离"
   echo "=============================================="
   echo "  命令名:     $COMMAND_NAME"
   echo "  源码目录:   $INSTALL_DIR"
@@ -1025,11 +1035,16 @@ install_linux() {
   start_clearance
   prepare_data_dir
 
-  PROFILE_SNIPPET="/etc/profile.d/grok-register.sh"
+  PROFILE_SNIPPET="/etc/profile.d/xai-register.sh"
   cat >"$PROFILE_SNIPPET" <<EOF
-# Grok-Register (generated by install.sh)
+# XAI-Register (generated by install.sh)
 export PATH="\$PATH:/usr/local/go/bin:${BIN_DIR}"
-export GROK_HOME="${GROK_HOME_OPT}"
+export XAI_HOME="${GROK_HOME_OPT}"
+export XAI_PYTHON="${VENV_DIR}/bin/python"
+export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
+export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
+export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
+# 兼容本 fork 旧变量名（不覆盖原版 grok 的 GROK_HOME）
 export GROK_PYTHON="${VENV_DIR}/bin/python"
 export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
 export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
@@ -1042,11 +1057,15 @@ EOF
     for rc in "${REAL_HOME}/.bashrc" "${REAL_HOME}/.zshrc" "${REAL_HOME}/.profile"; do
       [ -d "$(dirname "$rc")" ] || continue
       touch "$rc" 2>/dev/null || continue
-      if ! grep -q 'Grok-Register (generated by install.sh)' "$rc" 2>/dev/null; then
+      if ! grep -q 'XAI-Register (generated by install.sh)' "$rc" 2>/dev/null; then
         {
           echo ""
-          echo "# Grok-Register (generated by install.sh)"
-          echo "export GROK_HOME=\"${GROK_HOME_OPT}\""
+          echo "# XAI-Register (generated by install.sh)"
+          echo "export XAI_HOME=\"${GROK_HOME_OPT}\""
+          echo "export XAI_PYTHON=\"${VENV_DIR}/bin/python\""
+          echo "export XAI_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
+          echo "export XAI_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
+          echo "export XAI_CLEARANCE_DIR=\"${INSTALL_DIR}/clearance\""
           echo "export GROK_PYTHON=\"${VENV_DIR}/bin/python\""
           echo "export GROK_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
           echo "export GROK_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
@@ -1057,11 +1076,15 @@ EOF
         ok "已写入环境: $rc"
       fi
     done
-  elif [ -f /root/.bashrc ] && ! grep -q 'GROK_HOME=' /root/.bashrc 2>/dev/null; then
+  elif [ -f /root/.bashrc ] && ! grep -q 'XAI-Register (generated by install.sh)' /root/.bashrc 2>/dev/null; then
     {
       echo ""
-      echo "# Grok-Register"
-      echo "export GROK_HOME=\"${GROK_HOME_OPT}\""
+      echo "# XAI-Register (generated by install.sh)"
+      echo "export XAI_HOME=\"${GROK_HOME_OPT}\""
+      echo "export XAI_PYTHON=\"${VENV_DIR}/bin/python\""
+      echo "export XAI_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
+      echo "export XAI_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
+      echo "export XAI_CLEARANCE_DIR=\"${INSTALL_DIR}/clearance\""
       echo "export GROK_PYTHON=\"${VENV_DIR}/bin/python\""
       echo "export GROK_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
       echo "export GROK_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
@@ -1084,7 +1107,7 @@ install_darwin() {
 
   echo
   echo "=============================================="
-  echo " Grok-Register 一键部署 (macOS)"
+  echo " XAI-Register 一键部署 (macOS) — 与原版隔离"
   echo "=============================================="
   echo "  命令名:     $COMMAND_NAME"
   echo "  源码目录:   $INSTALL_DIR"
@@ -1172,12 +1195,17 @@ EOM
   start_clearance
   prepare_data_dir
 
-  local marker="# Grok-Register (generated by install.sh)"
+  local marker="# XAI-Register (generated by install.sh)"
   local block
   block=$(cat <<EOF
 ${marker}
 export PATH="\$PATH:${BIN_DIR}"
-export GROK_HOME="${GROK_HOME_OPT}"
+export XAI_HOME="${GROK_HOME_OPT}"
+export XAI_PYTHON="${VENV_DIR}/bin/python"
+export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
+export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
+export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
+# 兼容本 fork 旧变量名（不覆盖原版 grok 的 GROK_HOME）
 export GROK_PYTHON="${VENV_DIR}/bin/python"
 export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
 export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
@@ -1187,7 +1215,7 @@ EOF
   local env_hint=""
   for rc in "${HOME}/.zprofile" "${HOME}/.zshrc" "${HOME}/.bash_profile"; do
     touch "$rc" 2>/dev/null || continue
-    if grep -q 'Grok-Register (generated by install.sh)' "$rc" 2>/dev/null; then
+    if grep -q 'XAI-Register (generated by install.sh)' "$rc" 2>/dev/null; then
       ok "已存在环境片段: $rc"
     else
       printf '\n%s\n' "$block" >>"$rc"

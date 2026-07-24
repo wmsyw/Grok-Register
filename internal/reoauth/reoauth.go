@@ -574,7 +574,7 @@ func reauthOne(ctx context.Context, cli *oauth.Client, a Account, opt Options) R
 		cred, err = cli.Refresh(ctx, a.RefreshToken)
 	} else if strings.TrimSpace(a.SSO) != "" {
 		method = "device"
-		cred, err = cli.Exchange(ctx, a.SSO)
+		cred, err = cli.ExchangeOpts(ctx, oauth.ExchangeOptions{SSO: a.SSO})
 	} else {
 		res.Method = "skip"
 		res.Err = "无 refresh_token 且无 sso（inspection 仅含 email 时请提供本地 outputs 或 CPA/accounts）"
@@ -585,7 +585,7 @@ func reauthOne(ctx context.Context, cli *oauth.Client, a Account, opt Options) R
 		// if refresh failed, try device when sso present
 		if method == "refresh" && strings.TrimSpace(a.SSO) != "" {
 			logf(opt, "  %s refresh 失败，回退 device…", email)
-			cred, err = cli.Exchange(ctx, a.SSO)
+			cred, err = cli.ExchangeOpts(ctx, oauth.ExchangeOptions{SSO: a.SSO})
 			res.Method = "device"
 		}
 	}
@@ -621,6 +621,13 @@ func reauthOne(ctx context.Context, cli *oauth.Client, a Account, opt Options) R
 	}
 	res.OK = true
 	res.Path = path
+	// Sibling SUB/ next to CPA/ when using a run-style layout.
+	if base := filepath.Base(opt.OutCPA); base == "CPA" {
+		subDir := filepath.Join(filepath.Dir(opt.OutCPA), "SUB")
+		if _, err := cpa.WriteSUBAuth(subDir, doc); err != nil {
+			logf(opt, "  %s write SUB: %v", email, err)
+		}
+	}
 
 	if opt.Uploader != nil && opt.Uploader.Enabled() {
 		ur := opt.Uploader.UploadDocument(doc)

@@ -267,6 +267,143 @@ func AppendGrok2APIToken(dir, token string) error {
 	return err
 }
 
+// WriteGrok2APIAuth writes a grok2api-friendly JSON auth record (SSO + OAuth tokens when present).
+// Path: <dir>/auth/<email-or-sub>.json
+func WriteGrok2APIAuth(dir string, doc Document, sso string) (string, error) {
+	if err := os.MkdirAll(filepath.Join(dir, "auth"), 0o700); err != nil {
+		return "", err
+	}
+	email := strings.TrimSpace(doc.Email)
+	sub := strings.TrimSpace(doc.Sub)
+	name := email
+	if name == "" {
+		name = sub
+	}
+	if name == "" {
+		name = "xai"
+	}
+	safe := sanitizeFileSegment(name)
+	path := filepath.Join(dir, "auth", safe+".json")
+	rec := map[string]any{
+		"type":          "xai",
+		"auth_kind":     "oauth",
+		"email":         email,
+		"sub":           sub,
+		"sso":           strings.TrimSpace(sso),
+		"access_token":  doc.AccessToken,
+		"refresh_token": doc.RefreshToken,
+		"id_token":      doc.IDToken,
+		"token_type":    doc.TokenType,
+		"expires_in":    doc.ExpiresIn,
+		"expired":       doc.Expired,
+		"last_refresh":  doc.LastRefresh,
+		"base_url":      doc.BaseURL,
+		"token_endpoint": doc.TokenEndpoint,
+		"headers":       doc.Headers,
+	}
+	raw, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	raw = append(raw, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(path, 0o600)
+	return path, nil
+}
+
+// WriteSUBAuth writes a Sub2API-compatible Grok OAuth account JSON under dir.
+// Fields: access_token, refresh_token, token_type, expires_at, base_url, email, sub.
+func WriteSUBAuth(dir string, doc Document) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	email := strings.TrimSpace(doc.Email)
+	sub := strings.TrimSpace(doc.Sub)
+	name := email
+	if name == "" {
+		name = sub
+	}
+	if name == "" {
+		name = "xai"
+	}
+	safe := sanitizeFileSegment(name)
+	path := filepath.Join(dir, "xai-"+safe+".json")
+
+	expiresAt := doc.Expired
+	// Sub2API accepts ISO expired or unix-ish expires_at; keep both.
+	rec := map[string]any{
+		"type":           "xai",
+		"platform":       "grok",
+		"auth_kind":      "oauth",
+		"access_token":   doc.AccessToken,
+		"refresh_token":  doc.RefreshToken,
+		"id_token":       doc.IDToken,
+		"token_type":     firstNonEmpty(doc.TokenType, "Bearer"),
+		"expires_in":     doc.ExpiresIn,
+		"expires_at":     expiresAt,
+		"expired":        expiresAt,
+		"last_refresh":   doc.LastRefresh,
+		"base_url":       firstNonEmpty(doc.BaseURL, CliproxyBase),
+		"token_endpoint": doc.TokenEndpoint,
+		"email":          email,
+		"sub":            sub,
+		"headers":        doc.Headers,
+	}
+	raw, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	raw = append(raw, '\n')
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return "", err
+	}
+	_ = os.Chmod(path, 0o600)
+	return path, nil
+}
+
+func sanitizeFileSegment(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-', r == '@':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	out := b.String()
+	if out == "" {
+		return "unknown"
+	}
+	if len(out) > 120 {
+		out = out[:120]
+	}
+	return out
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 func AppendAuthSession(path, email, sso string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err

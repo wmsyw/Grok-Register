@@ -4,15 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const (
-	EnvHome = "GROK_HOME"
-	DirName = ".grok"
+	// EnvHome is the preferred data-dir override for this fork (isolated from upstream grok).
+	EnvHome = "XAI_HOME"
+	// EnvHomeLegacy is accepted for compatibility with older env snippets.
+	EnvHomeLegacy = "GROK_HOME"
+	// DirName is the default directory under $HOME when no env override is set.
+	// Intentionally NOT ".grok" so a side-by-side install cannot clobber upstream data.
+	DirName = ".xai"
 )
 
-// Paths holds all filesystem locations under GROK_HOME.
+// Paths holds all filesystem locations under the data home.
 type Paths struct {
 	Root      string
 	Config    string
@@ -25,7 +31,10 @@ type Paths struct {
 }
 
 func Resolve() (Paths, error) {
-	root := os.Getenv(EnvHome)
+	root := strings.TrimSpace(os.Getenv(EnvHome))
+	if root == "" {
+		root = strings.TrimSpace(os.Getenv(EnvHomeLegacy))
+	}
 	if root == "" {
 		h, err := os.UserHomeDir()
 		if err != nil {
@@ -69,7 +78,8 @@ type RunDirs struct {
 	Root      string
 	SSO       string
 	CPA       string
-	Grok2API  string // single-token lines for grok2api-style importers
+	SUB       string // Sub2API-compatible OAuth JSON
+	Grok2API  string // SSO tokens + auth/*.json for grok2api importers
 	Discarded string
 	LogPath   string
 }
@@ -84,11 +94,12 @@ func (p Paths) PrepareRun(runID string) (RunDirs, error) {
 		Root:      root,
 		SSO:       filepath.Join(root, "SSO"),
 		CPA:       filepath.Join(root, "CPA"),
+		SUB:       filepath.Join(root, "SUB"),
 		Grok2API:  filepath.Join(root, "grok2api"),
 		Discarded: filepath.Join(root, "discarded"),
 		LogPath:   filepath.Join(p.LogsDir, fmt.Sprintf("run-%s.log", runID)),
 	}
-	for _, d := range []string{rd.Root, rd.SSO, rd.CPA, rd.Grok2API, rd.Discarded} {
+	for _, d := range []string{rd.Root, rd.SSO, rd.CPA, rd.SUB, rd.Grok2API, rd.Discarded} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return RunDirs{}, err
 		}

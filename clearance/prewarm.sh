@@ -4,13 +4,13 @@
 #
 # Usage:
 #   bash clearance/prewarm.sh
-#   FLARESOLVERR_URL=http://127.0.0.1:8191 CLEARANCE_PROXY=http://privoxy:8118 bash clearance/prewarm.sh
+#   FLARESOLVERR_URL=http://127.0.0.1:8291 CLEARANCE_PROXY=http://privoxy:8118 bash clearance/prewarm.sh
 #   bash clearance/prewarm.sh --direct   # no proxy inside FS browser
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export FLARESOLVERR_URL="${FLARESOLVERR_URL:-http://127.0.0.1:8191}"
+export FLARESOLVERR_URL="${FLARESOLVERR_URL:-http://127.0.0.1:8291}"
 export CLEARANCE_TIMEOUT_SEC="${CLEARANCE_TIMEOUT_SEC:-90}"
 
 if [[ "${1:-}" == "--direct" ]]; then
@@ -77,7 +77,7 @@ def urls() -> list[str]:
             out.append(item)
     return out or list(DEFAULT_URLS)
 
-fs = (os.environ.get("FLARESOLVERR_URL") or "http://127.0.0.1:8191").rstrip("/")
+fs = (os.environ.get("FLARESOLVERR_URL") or "http://127.0.0.1:8291").rstrip("/")
 proxy = (os.environ.get("CLEARANCE_PROXY") or "").strip()
 timeout = max(10, int(os.environ.get("CLEARANCE_TIMEOUT_SEC") or 60))
 max_ms = timeout * 1000

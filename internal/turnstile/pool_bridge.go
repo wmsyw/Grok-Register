@@ -317,6 +317,11 @@ func (p *PoolBridge) kill() error {
 }
 
 func findPoolScript() string {
+	if p := strings.TrimSpace(os.Getenv("XAI_TURNSTILE_POOL_SCRIPT")); p != "" {
+		if fileExists(p) {
+			return p
+		}
+	}
 	if p := strings.TrimSpace(os.Getenv("GROK_TURNSTILE_POOL_SCRIPT")); p != "" {
 		if fileExists(p) {
 			return p
@@ -329,6 +334,8 @@ func findPoolScript() string {
 			filepath.Join(dir, "scripts", "turnstile_pool.py"),
 			filepath.Join(dir, "turnstile_pool.py"),
 			filepath.Join(dir, "..", "scripts", "turnstile_pool.py"),
+			"/usr/local/share/xai-reg/turnstile_pool.py",
+			"/opt/XAI-Register/scripts/turnstile_pool.py",
 		)
 	}
 	if wd, err := os.Getwd(); err == nil {

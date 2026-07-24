@@ -882,10 +882,33 @@ func (c *Client) Refresh(ctx context.Context, refreshToken string) (Credential, 
 	return Credential{}, fmt.Errorf("refresh_rejected: %s", errCode)
 }
 
+// SSORefresher optionally re-logins (CreateSession) when device verify rejects SSO.
+type SSORefresher func(ctx context.Context, reason string) (newSSO string, err error)
+
+// SSOPlanter optionally plants SSO across auth domains (CreateCookieSetterLink hop)
+// before device verify/approve. successURL is usually the verification URL.
+// Return value is the effective SSO to use for ConfirmHTTP (may rotate).
+type SSOPlanter func(ctx context.Context, sso, successURL string) (effectiveSSO string, err error)
+
+// ExchangeOptions controls device-flow OAuth after registration/password login.
+type ExchangeOptions struct {
+	SSO     string
+	Email   string // diagnostic only
+	Plant   SSOPlanter
+	Refresh SSORefresher
+}
+
 // Exchange is convenience: start flow + confirm HTTP + poll.
 // On rate_limited / device 429 / invalid_grant, retry with a fresh device code.
 func (c *Client) Exchange(ctx context.Context, sso string) (Credential, error) {
+	return c.ExchangeOpts(ctx, ExchangeOptions{SSO: sso})
+}
+
+// ExchangeOpts runs device-flow OAuth with optional SSO plant + CreateSession refresh.
+// Flow: StartDeviceFlow → (PlantSSO) → ConfirmHTTP(user_code) → PollToken.
+func (c *Client) ExchangeOpts(ctx context.Context, opt ExchangeOptions) (Credential, error) {
 	var last error
+	sso := strings.TrimSpace(opt.SSO)
 	for attempt := 0; attempt < 3; attempt++ {
 		if err := c.WaitRateLimit(ctx); err != nil {
 			return Credential{}, err
@@ -898,10 +921,29 @@ func (c *Client) Exchange(ctx context.Context, sso string) (Credential, error) {
 			}
 			return Credential{}, err
 		}
+		// Plant SSO onto auth.x.ai domains before verify (user_code path).
+		if opt.Plant != nil && sso != "" && flow.VerificationURL != "" {
+			if ns, err := opt.Plant(ctx, sso, flow.VerificationURL); err != nil {
+				// non-fatal: ConfirmHTTP still sends Cookie: sso=
+				last = err
+			} else if strings.TrimSpace(ns) != "" {
+				sso = strings.TrimSpace(ns)
+			}
+		}
 		if err := c.ConfirmHTTP(ctx, sso, flow); err != nil {
 			last = err
 			if errors.Is(err, ErrRateLimited) && attempt < 2 {
 				continue
+			}
+			// SSO rejected by auth.x.ai → CreateSession refresh once, then retry.
+			if attempt < 2 && opt.Refresh != nil &&
+				(strings.Contains(err.Error(), "sso_rejected") ||
+					strings.Contains(err.Error(), "login_required") ||
+					strings.Contains(err.Error(), "sign-in")) {
+				if ns, rerr := opt.Refresh(ctx, err.Error()); rerr == nil && strings.TrimSpace(ns) != "" {
+					sso = strings.TrimSpace(ns)
+					continue
+				}
 			}
 			// challenge / unknown_page: one more full attempt with new device code
 			if attempt < 2 && (strings.Contains(err.Error(), "challenge") ||
@@ -916,6 +958,11 @@ func (c *Client) Exchange(ctx context.Context, sso string) (Credential, error) {
 			last = err
 			// invalid_grant: consent did not stick — new device flow
 			if attempt < 2 && strings.Contains(err.Error(), "invalid_grant") {
+				if opt.Refresh != nil {
+					if ns, rerr := opt.Refresh(ctx, err.Error()); rerr == nil && strings.TrimSpace(ns) != "" {
+						sso = strings.TrimSpace(ns)
+					}
+				}
 				continue
 			}
 			return Credential{}, err

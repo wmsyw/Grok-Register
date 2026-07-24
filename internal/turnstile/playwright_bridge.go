@@ -154,15 +154,25 @@ func maybeXvfb(python string, args []string, mode string) (string, []string) {
 }
 
 func injectClearance() bool {
-	v := strings.TrimSpace(strings.ToLower(os.Getenv("GROK_TURNSTILE_INJECT_CLEARANCE")))
+	v := strings.TrimSpace(strings.ToLower(firstEnv("XAI_TURNSTILE_INJECT_CLEARANCE", "GROK_TURNSTILE_INJECT_CLEARANCE")))
 	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func findPython() string {
 	for _, name := range []string{
-		os.Getenv("GROK_PYTHON"),
-		"/opt/cloakbrowser-venv/bin/python",
-		"/opt/Grok-Reg/.venv/bin/python",
+		firstEnv("XAI_PYTHON", "GROK_PYTHON"),
+		"/opt/xai-cloakbrowser-venv/bin/python",
+		"/opt/cloakbrowser-venv/bin/python", // shared fallback only
+		"/opt/XAI-Register/.venv/bin/python",
 		"python3",
 		"python",
 	} {
@@ -183,7 +193,7 @@ func findPython() string {
 }
 
 func findMintScript() string {
-	if p := strings.TrimSpace(os.Getenv("GROK_TURNSTILE_SCRIPT")); p != "" {
+	if p := firstEnv("XAI_TURNSTILE_SCRIPT", "GROK_TURNSTILE_SCRIPT"); p != "" {
 		if fileExists(p) {
 			return p
 		}
@@ -196,21 +206,22 @@ func findMintScript() string {
 			filepath.Join(dir, "scripts", "turnstile_mint.py"),
 			filepath.Join(dir, "turnstile_mint.py"),
 			filepath.Join(dir, "..", "scripts", "turnstile_mint.py"),
-			filepath.Join(dir, "..", "Grok-Reg", "scripts", "turnstile_mint.py"),
+			filepath.Join(dir, "..", "XAI-Register", "scripts", "turnstile_mint.py"),
+			"/usr/local/share/xai-reg/turnstile_mint.py",
 		)
 	}
 	// cwd
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
 			filepath.Join(wd, "scripts", "turnstile_mint.py"),
-			filepath.Join(wd, "Grok-Reg", "scripts", "turnstile_mint.py"),
+			filepath.Join(wd, "XAI-Register", "scripts", "turnstile_mint.py"),
 		)
 	}
-	// common install locations
+	// common install locations (this fork first; never require original Grok-Register)
 	candidates = append(candidates,
-		"/opt/Grok-Register/scripts/turnstile_mint.py",
-		"/opt/Grok-Reg/scripts/turnstile_mint.py",
-		"/usr/local/share/grok-reg/turnstile_mint.py",
+		"/opt/XAI-Register/scripts/turnstile_mint.py",
+		"/usr/local/share/xai-reg/turnstile_mint.py",
+		filepath.Join(os.Getenv("HOME"), ".local/share/xai-reg/turnstile_mint.py"),
 	)
 	// source relative to this file at build time — not available; skip
 	_ = runtime.GOOS

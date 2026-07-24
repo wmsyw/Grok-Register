@@ -110,8 +110,8 @@ func Defaults() Config {
 		ClearanceEnabled:      true,
 		ClearanceMode:         "auto",
 		ClearanceAutoStop:     true,
-		RegisterProxy:         "http://127.0.0.1:40080",
-		FlareSolverrURL:       "http://127.0.0.1:8191",
+		RegisterProxy:         "http://127.0.0.1:41080",
+		FlareSolverrURL:       "http://127.0.0.1:8291",
 		ClearanceProxy:        "http://privoxy:8118",
 		ClearanceURLs:         "https://accounts.x.ai,https://x.ai,https://status.x.ai,https://console.x.ai,https://auth.x.ai",
 		CFImpersonate:         "chrome_131",
@@ -131,8 +131,8 @@ func Defaults() Config {
 		OAuthWorkers:          0, // auto: 1 when thread≥3 or large target
 		ProbeEnabled:          true,
 		ProbeWarmupSec:        5, // stable: new tokens often 403 under 1.5–3s
-		HTTPProxy:             "http://127.0.0.1:40080",
-		HTTPSProxy:            "http://127.0.0.1:40080",
+		HTTPProxy:             "http://127.0.0.1:41080",
+		HTTPSProxy:            "http://127.0.0.1:41080",
 		NoProxy:               "127.0.0.1,localhost",
 		CPAUploadEnabled:      false,
 		CPAManagementBase:     "http://localhost:8317/v0/management",
@@ -258,7 +258,7 @@ func Save(path string, cfg Config) error {
 	if cfg.LiteSolverURL != "" {
 		b.WriteString(fmt.Sprintf("LITE_SOLVER_URL=%s\n", cfg.LiteSolverURL))
 	}
-	// TURNSTILE_WORKERS / TARGET: not persisted — use `grok start -t N --thread M`
+	// TURNSTILE_WORKERS / TARGET: not persisted — use `xai start -t N --thread M`
 	b.WriteString(fmt.Sprintf("PROTOCOL_HTTP=%s\n", bool01(cfg.ProtocolHTTP)))
 	b.WriteString(fmt.Sprintf("HTTP_POOL_SIZE=%d\n", cfg.HTTPPoolSize))
 	b.WriteString(fmt.Sprintf("TEMPMAIL_LOL_RETRIES=%d\n", cfg.TempmailLOLRetries))
@@ -409,7 +409,7 @@ func ClampThreads(n int) (int, error) {
 	return n, nil
 }
 
-// SyncExample writes/updates ~/.grok/config.env.example from the embedded template
+// SyncExample writes/updates ~/.xai/config.env.example from the embedded template
 // so users see newly added keys after upgrades.
 func SyncExample(homeDir string) error {
 	if homeDir == "" {

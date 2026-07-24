@@ -14,6 +14,7 @@ const (
 	CodeGRPCCreate    = "grpc_create"
 	CodeGRPCVerify    = "grpc_verify"
 	CodeGRPCPassword  = "grpc_password"
+	CodeGRPCSession   = "grpc_session"
 	CodeEmailPoll     = "email_poll"
 	CodeTurnstile     = "turnstile"
 	CodeSignup        = "signup"

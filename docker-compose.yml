@@ -3,11 +3,11 @@
 # 用法：
 #   docker compose up -d                      # 起全部（WARP + Privoxy + FlareSolverr + grok(idle)）
 #   docker compose ps
-#   docker exec -it grok-reg grok help
-#   docker exec -it grok-reg grok start -t 10  # 后台跑；PID 文件、日志都在 ./data 下
-#   docker exec -it grok-reg grok status
-#   docker exec -it grok-reg grok logs -f
-#   docker exec -it grok-reg grok stop
+#   docker exec -it grok-reg xai help
+#   docker exec -it grok-reg xai start -t 10  # 后台跑；PID 文件、日志都在 ./data 下
+#   docker exec -it grok-reg xai status
+#   docker exec -it grok-reg xai logs -f
+#   docker exec -it grok-reg xai stop
 #
 # 一次性前台跑一批（跑完即停、不保留）：
 #   docker compose run --rm grok run

@@ -1,10 +1,10 @@
 # APP / 命令名可改：make install APP=grok-reg
-APP?=grok
+APP?=xai
 MODULE=github.com/grok-free-register/grok-reg
 VERSION?=0.1.0
 PREFIX?=/usr/local
 BINDIR?=$(PREFIX)/bin
-SHAREDIR?=$(PREFIX)/share/grok-reg
+SHAREDIR?=$(PREFIX)/share/xai-reg
 
 .PHONY: build install uninstall clean test run
 
@@ -53,4 +53,4 @@ test:
 
 run:
 	@if [ -z "$(GO)" ] || [ ! -x "$(GO)" ]; then echo "go not found"; exit 1; fi
-	$(GO) run ./cmd/grok help
+	$(GO) run ./cmd/xai help

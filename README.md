@@ -5,13 +5,13 @@ Grok 免费号 **注册 → OAuth → CPA 可用 JSON** 二合一 CLI（Go）。
 一条命令后台跑完，产物可直接导入 CPA / cliproxy 类网关。
 
 ```bash
-grok start                 # 交互：数量 + 线程(1–8)
-grok start -t 10 --thread 2
-grok status
-grok logs -f
-grok stop
-grok config                # 编辑 ~/.grok/config.env
-grok upload                # 手动上传 CPA JSON 到 Management API
+xai start                 # 交互：数量 + 线程(1–8)
+xai start -t 10 --thread 2
+xai status
+xai logs -f
+xai stop
+xai config                # 编辑 ~/.grok/config.env
+xai upload                # 手动上传 CPA JSON 到 Management API
 ```
 
 ---
@@ -28,7 +28,7 @@ grok upload                # 手动上传 CPA JSON 到 Management API
 | **全局座位上限** | `done + reserved ≤ target` |
 | **CPA 上传 wait** | 结束前等待 Management 上传，避免进程先退出 |
 | **一键安装** | 路径/命令名/WARP/结束停容器交互；安全同步（不再误删非空目录） |
-| **`grok stop` 停清障** | `CLEARANCE_AUTO_STOP=1` 时手动 stop 也会 `docker compose stop` |
+| **`xai stop` 停清障** | `CLEARANCE_AUTO_STOP=1` 时手动 stop 也会 `docker compose stop` |
 | **grok2api 导出** | `outputs/<run>/grok2api/tokens.txt` 仅 SSO token（一行一个） |
 | **OAuth 限速** | 全局间隔 + discovery 缓存 + rate_limited 重试 |
 
@@ -55,8 +55,8 @@ REGISTER_PROXY=http://127.0.0.1:7890 go run scripts/smoke_protocol.go
 
 | 平台 | 前提 | 默认安装位置 |
 |------|------|----------------|
-| **Linux**（Debian/Ubuntu） | root / sudo | 源码 `/opt/Grok-Register`；数据优先 **`SUDO_USER` 的 `~/.grok`**（非 `/root`） |
-| **macOS** | 已装 **Homebrew** + **Docker Desktop**（缺则提示安装命令后退出） | `~/Grok-Register`，数据 `~/.grok`，CLI `~/.local/bin` |
+| **Linux**（Debian/Ubuntu） | root / sudo | 源码 `/opt/XAI-Register`；数据优先 **`SUDO_USER` 的 `~/.xai`**（与原版 `~/.grok` 隔离） |
+| **macOS** | 已装 **Homebrew** + **Docker Desktop**（缺则提示安装命令后退出） | `~/XAI-Register`，数据 `~/.xai`，CLI `~/.local/bin` |
 
 会拉源码、编译 CLI、装 Playwright/CloakBrowser、起 clearance，并写入**分区中文注释**的 `config.env`（与 `config.env.example` 同模板）。
 
@@ -66,13 +66,13 @@ REGISTER_PROXY=http://127.0.0.1:7890 go run scripts/smoke_protocol.go
 
 1. CLI 命令名 / 源码目录 / 数据目录 / 二进制 / venv  
 2. **是否启用 WARP 清障栈？** `[Y]`  
-   - **Y（默认）**：起 Docker 清障，`REGISTER_PROXY=http://127.0.0.1:40080`  
+   - **Y（默认）**：起 Docker 清障，`REGISTER_PROXY=http://127.0.0.1:41080`  
    - **N**：不装清障；再问 **本机 HTTP 代理端口**  
      - 输入如 `7890` → `REGISTER_PROXY=http://127.0.0.1:7890`，`CLEARANCE_ENABLED=0`  
      - **直接回车** → 直连（无代理，适合能访问 x.ai 的境外 VPS）  
 3. **（WARP 时）运行结束后是否自动关闭清障容器？** `[Y]`  
    - **Y（默认）**：`CLEARANCE_AUTO_STOP=1`，结束/中断后 `docker compose stop`  
-   - **N**：容器常开；每次 `grok start` 仍会检测并自动拉起未运行的栈
+   - **N**：容器常开；每次 `xai start` 仍会检测并自动拉起未运行的栈
 无 TTY 的 `curl|sudo bash` 可能无法提问，此时：
 
 ```bash
@@ -97,11 +97,11 @@ curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scr
 
 | 项 | 默认 |
 |----|------|
-| 命令 | `/usr/local/bin/grok` |
-| 源码 | `/opt/Grok-Register`（软链 `/opt/Grok-Reg`） |
-| 数据 | `sudo` 时为 **`/home/<SUDO_USER>/.grok`**，纯 root 为 `/root/.grok` |
-| Python | `/opt/cloakbrowser-venv/bin/python` |
-| mint | `/usr/local/share/grok-reg/turnstile_{mint,pool}.py` |
+| 命令 | `/usr/local/bin/xai` |
+| 源码 | `/opt/XAI-Register`（软链 `/opt/XAI-Reg`） |
+| 数据 | `sudo` 时为 **`/home/<SUDO_USER>/.xai`**，纯 root 为 `/root/.xai`（与原版 `~/.grok` 隔离） |
+| Python | `/opt/xai-cloakbrowser-venv/bin/python` |
+| mint | `/usr/local/share/xai-reg/turnstile_{mint,pool}.py` |
 ### macOS 一行
 
 **先**确认：
@@ -123,7 +123,7 @@ curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scr
 
 | 项 | 默认 |
 |----|------|
-| 命令 | `~/.local/bin/grok` |
+| 命令 | `~/.local/bin/xai` |
 | 源码 | `~/Grok-Register` |
 | 数据 | `~/.grok` |
 | Python | `~/.local/share/cloakbrowser-venv/bin/python` |
@@ -187,9 +187,9 @@ export PATH="$PATH:$HOME/.local/bin"
 export GROK_HOME="$HOME/.grok"
 export GROK_PYTHON="$HOME/.local/share/cloakbrowser-venv/bin/python"
 
-grok start
-grok status
-grok logs -f
+xai start
+xai status
+xai logs -f
 ```
 
 clearance：
@@ -211,7 +211,7 @@ cd ~/Grok-Register/clearance && docker compose up -d && docker compose ps
 | Python 3.10+ + venv | Turnstile Playwright mint | 拿不到 token |
 | Playwright + CloakBrowser | 无头过 CF Turnstile | `timeout` / `iframes=0` |
 | Docker | 清障栈（强烈推荐） | 注册/邮箱/CF 更容易挂 |
-| CPA Management（可选） | `grok upload` / 自动上传 | 本地仍有 `CPA/*.json` |
+| CPA Management（可选） | `xai upload` / 自动上传 | 本地仍有 `CPA/*.json` |
 
 ### 推荐硬件（运行时，非编译）
 
@@ -294,10 +294,10 @@ sudo make install
 # 自定义命令名：
 # make build APP=grok-reg && sudo make install APP=grok-reg
 
-grok help
+xai help
 ```
 
-`sudo make install` 在已有 `bin/grok` 时**不会**再调 `go`（避免 root PATH 里没有 go）。
+`sudo make install` 在已有 `bin/xai` 时**不会**再调 `go`（避免 root PATH 里没有 go）。
 
 ### 4. 无头浏览器：Playwright + CloakBrowser（**必做**）
 
@@ -320,7 +320,7 @@ export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
 $GROK_PYTHON /usr/local/share/grok-reg/turnstile_mint.py \
   --site-key 0x4AAAAAAAhr9JGVDZbrZOo0 \
   --url https://accounts.x.ai/sign-up \
-  --proxy http://127.0.0.1:40080 \
+  --proxy http://127.0.0.1:41080 \
   --timeout 70
 echo exit:$?
 ```
@@ -335,21 +335,21 @@ sudo docker compose ps
 
 | 端口 | 服务 |
 |------|------|
-| `127.0.0.1:40000` | WARP SOCKS5 |
-| `127.0.0.1:40080` | Privoxy HTTP |
-| `127.0.0.1:8191` | FlareSolverr |
+| `127.0.0.1:41000` | WARP SOCKS5 |
+| `127.0.0.1:41080` | Privoxy HTTP |
+| `127.0.0.1:8291` | FlareSolverr |
 
 ### 6. 配置 `~/.grok/config.env`
 
 ```bash
 sudo mkdir -p /root/.grok
-# 也可：grok config（首次会生成 example + 可编辑）
+# 也可：xai config（首次会生成 example + 可编辑）
 sudo tee /root/.grok/config.env >/dev/null <<'EOF'
 EMAIL_MODE=tempmail
 
 CLEARANCE_ENABLED=1
-REGISTER_PROXY=http://127.0.0.1:40080
-FLARESOLVERR_URL=http://127.0.0.1:8191
+REGISTER_PROXY=http://127.0.0.1:41080
+FLARESOLVERR_URL=http://127.0.0.1:8291
 CLEARANCE_PROXY=http://privoxy:8118
 CLEARANCE_URLS=https://accounts.x.ai,https://x.ai,https://status.x.ai,https://console.x.ai,https://auth.x.ai
 
@@ -360,8 +360,8 @@ HTTP_POOL_SIZE=8
 TEMPMAIL_LOL_RETRIES=30
 TEMPMAIL_LOL_MIN_INTERVAL_MS=1500
 
-HTTPS_PROXY=http://127.0.0.1:40080
-HTTP_PROXY=http://127.0.0.1:40080
+HTTPS_PROXY=http://127.0.0.1:41080
+HTTP_PROXY=http://127.0.0.1:41080
 NO_PROXY=127.0.0.1,localhost
 
 PROBE_ENABLED=1
@@ -413,13 +413,13 @@ EMAIL_MODE=tempmail
 export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
 export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
 
-grok start
-grok start -t 10 --thread 3
-grok status
-grok logs -f
-grok stop
-grok config
-grok upload
+xai start
+xai start -t 10 --thread 3
+xai status
+xai logs -f
+xai stop
+xai config
+xai upload
 ```
 
 **数据目录**（`GROK_HOME`，默认 `~/.grok`）：
@@ -476,11 +476,11 @@ docker compose ps
 # 期望：warp / privoxy / flaresolverr healthy，grok-reg Up
 
 # 2) 进入交互 — 与 Linux 完全一致
-docker exec -it grok-reg grok help
-docker exec -it grok-reg grok start -t 10
-docker exec -it grok-reg grok status
-docker exec -it grok-reg grok logs -f
-docker exec -it grok-reg grok stop
+docker exec -it grok-reg xai help
+docker exec -it grok-reg xai start -t 10
+docker exec -it grok-reg xai status
+docker exec -it grok-reg xai logs -f
+docker exec -it grok-reg xai stop
 ```
 
 **输出文件**：宿主机可直接看到 `./data/`（Windows 资源管理器 `Grok-Register\data`）：
@@ -509,8 +509,8 @@ echo exit:$?
 **关键约定**（与 Linux 裸跑差异）：
 | 项 | Linux 裸跑 | Docker Desktop Windows |
 |----|------------|-------------------------|
-| `REGISTER_PROXY` | `http://127.0.0.1:40080` | `http://privoxy:8118` |
-| `FLARESOLVERR_URL` | `http://127.0.0.1:8191` | `http://flaresolverr:8191` |
+| `REGISTER_PROXY` | `http://127.0.0.1:41080` | `http://privoxy:8118` |
+| `FLARESOLVERR_URL` | `http://127.0.0.1:8291` | `http://flaresolverr:8191` |
 | `CLEARANCE_PROXY` | `http://privoxy:8118` | `http://privoxy:8118` |
 | Chrome 路径 | `~/.cloakbrowser/...` | `/root/.cloakbrowser/...`（容器内 root） |
 | `GROK_HOME` | `~/.grok` | `/data`（=`host ./data`） |
@@ -538,13 +538,13 @@ Remove-Item -Recurse bin/,, data/ -ErrorAction SilentlyContinue   # 连本地输
 
 | 命令 | 说明 |
 |------|------|
-| `grok start` | 交互：注册数量 + 并发线程(1–8) |
-| `grok start -t N --thread M` | 目标 N（1–10000）；线程 M（1–8）；**计数 = CPA 探活成功数** |
-| `grok status` | 进度、线程、当前步骤 |
-| `grok logs` / `logs -f` | 最近日志 / 跟踪 |
-| `grok stop` | 停止注册机；`CLEARANCE_AUTO_STOP=1` 时同步停清障容器 |
-| `grok config` | 打开 `config.env`，刷新 `config.env.example` |
-| `grok upload` | 选最近 run，上传 CPA JSON |
+| `xai start` | 交互：注册数量 + 并发线程(1–8) |
+| `xai start -t N --thread M` | 目标 N（1–10000）；线程 M（1–8）；**计数 = CPA 探活成功数** |
+| `xai status` | 进度、线程、当前步骤 |
+| `xai logs` / `logs -f` | 最近日志 / 跟踪 |
+| `xai stop` | 停止注册机；`CLEARANCE_AUTO_STOP=1` 时同步停清障容器 |
+| `xai config` | 打开 `config.env`，刷新 `config.env.example` |
+| `xai upload` | 选最近 run，上传 CPA JSON |
 
 ---
 
@@ -558,7 +558,7 @@ Remove-Item -Recurse bin/,, data/ -ErrorAction SilentlyContinue   # 连本地输
 | `GROK_TURNSTILE_POOL_SCRIPT` | 常驻池路径 |
 | `CHROME_PATH` | 强制 Chromium |
 | `CLOAKBROWSER_SUPPRESS_FONT_WARNING` | 抑制 Linux 字体提示 |
-| `EDITOR` | `grok config` 编辑器 |
+| `EDITOR` | `xai config` 编辑器 |
 
 完整模板：`~/.grok/config.env.example`（每次 start/config 同步）。
 
@@ -636,7 +636,7 @@ CPA_MANAGEMENT_KEY=...
 
 - 宿主机跑 `grok` 必须用 `127.0.0.1`，不要写 `cli-proxy-api`  
 - 新版本会自动改写 docker 主机名并补 `/v0/management`  
-- 手动：`grok upload`
+- 手动：`xai upload`
 
 ---
 
@@ -699,7 +699,7 @@ CPA_MANAGEMENT_BASE=http://127.0.0.1:8317/v0/management
 
 - **OAuth**：全局启动间隔（默认 4s）、OIDC discovery 缓存、`rate_limited` 自动重试一次；高并发默认 1 个 OAuth worker
 - **探活**：`PROBE_WARMUP_SEC` 默认 **5s**；403/5xx 多轮退避重试
-- **`grok stop`**：在 `CLEARANCE_AUTO_STOP=1` 时同步 `docker compose stop` 清障栈（以前只有达目标/正常结束才停）
+- **`xai stop`**：在 `CLEARANCE_AUTO_STOP=1` 时同步 `docker compose stop` 清障栈（以前只有达目标/正常结束才停）
 - **安装安全**：非默认 `INSTALL_DIR` 且无 `.git` 时不再 `rm -rf` 整目录；危险/非空非本仓目录直接拒绝
 - **grok2api**：`outputs/<run>/grok2api/tokens.txt` 仅 SSO token，一行一个
 - **一键安装**：Linux 默认装 `xvfb`；种子/升级合并 `TURNSTILE_MODE=offscreen`、`CF_IMPERSONATE`、`OAUTH_*`、`PROBE_WARMUP_SEC` 等
@@ -741,7 +741,7 @@ grep -q '^OAUTH_RETRY_SEC=' "$CFG" 2>/dev/null || echo 'OAUTH_RETRY_SEC=60' >>"$
 grep -q '^PROBE_WARMUP_SEC=' "$CFG" 2>/dev/null || echo 'PROBE_WARMUP_SEC=5' >>"$CFG"
 
 # 4) 验证
-which grok; grok help
+which grok; xai help
 command -v xvfb-run && xvfb-run -a echo xvfb_ok
 ```
 
@@ -772,7 +772,7 @@ grep -q '^CLEARANCE_AUTO_STOP=' "$CFG" 2>/dev/null || echo 'CLEARANCE_AUTO_STOP=
 
 ```bash
 go test ./...
-go build -o bin/grok ./cmd/grok
+go build -o bin/xai ./cmd/grok
 bash -n scripts/install.sh
 ```
 

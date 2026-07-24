@@ -92,34 +92,34 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Print(`grok — Grok 注册 + OAuth 二合一 CLI
+	fmt.Print(`xai — Grok 注册 + OAuth 二合一 CLI
 
 用法:
-  grok start                      交互：询问注册数量与并发线程(1-8)
-  grok start -t N --thread M      目标 N 个 CPA 成功；M 并发线程
-  grok start -t N -j M            同上（-j 为 --thread 简写）
-  grok status                     查看运行状态与进度
-  grok stop                       立即停止注册机
-  grok logs [-f] [--debug|--info|--warn|--error]
+  xai start                      交互：询问注册数量与并发线程(1-8)
+  xai start -t N --thread M      目标 N 个 CPA 成功；M 并发线程
+  xai start -t N -j M            同上（-j 为 --thread 简写）
+  xai status                     查看运行状态与进度
+  xai stop                       立即停止注册机
+  xai logs [-f] [--debug|--info|--warn|--error]
                                   查看最近一次运行日志；-f 实时跟踪
-  grok upload                     选择最近 run 的 CPA JSON 上传到 Management API
-  grok reoauth <path>             对 inspection/CPA/accounts 重登并写出新 CPA
-  grok config                     打开 ~/.grok/config.env（并刷新 config.env.example）
-  grok help                       显示帮助
+  xai upload                     选择最近 run 的 CPA JSON 上传到 Management API
+  xai reoauth <path>             对 inspection/CPA/accounts 重登并写出新 CPA
+  xai config                     打开 ~/.xai/config.env（并刷新 config.env.example）
+  xai help                       显示帮助
 
 说明:
   -t / --target   目标账号数 = 探活成功写入 CPA/ 的数量 (1-10000)
   --thread / -j   并发注册/Turnstile 线程数 (1-8)，默认交互回车=2（较稳）
   logs 等级:      默认 --info（隐藏 DBG）；--debug 显示全部；--warn / --error 更严
-                  例: grok logs -f --debug
+                  例: xai logs -f --debug
   默认节奏:       OAUTH_MIN_INTERVAL_SEC=6  PROBE_WARMUP_SEC=5  OAUTH_RETRY_SEC=60
-  reoauth:        优先 refresh_token；否则 SSO device；配置了 CPA 上传则自动入库
-  升级后请查看 ~/.grok/config.env.example 了解新增配置项
+  reoauth:        优先 refresh_token；否则 SSO device（CreateSession 回退）；配置了 CPA 上传则自动入库
+  升级后请查看 ~/.xai/config.env.example 了解新增配置项
 
-数据目录: ~/.grok/ (可用 GROK_HOME 覆盖)
-  输出:     ~/.grok/outputs/<yyyymmdd-HHMMSS>/{SSO,CPA,grok2api}/
-            grok2api/tokens.txt = 单行 SSO token（无密码，供 grok2api）
-  grok stop 在 CLEARANCE_AUTO_STOP=1 时会同时 docker compose stop 清障栈
+数据目录: ~/.xai/ (可用 XAI_HOME 覆盖；兼容 GROK_HOME)
+  输出:     ~/.xai/outputs/<yyyymmdd-HHMMSS>/{SSO,CPA,SUB,grok2api}/
+            CPA/*.json + SUB/*.json = OAuth access/refresh；grok2api/tokens.txt = SSO
+  xai stop 在 CLEARANCE_AUTO_STOP=1 时会同时 docker compose stop 清障栈
 `)
 }
 
@@ -191,7 +191,7 @@ func cmdStart(args []string) error {
 			}
 			threadSet = true
 		default:
-			return fmt.Errorf("未知参数: %s（用法: grok start -t N --thread M）", a)
+			return fmt.Errorf("未知参数: %s（用法: xai start -t N --thread M）", a)
 		}
 	}
 
@@ -204,7 +204,7 @@ func cmdStart(args []string) error {
 
 	// already running?
 	if pid, err := daemon.ReadPID(p.PID); err == nil && daemon.PIDAlive(pid) {
-		return fmt.Errorf("注册机已经在运行 (PID %d)，先 grok status / grok stop", pid)
+		return fmt.Errorf("注册机已经在运行 (PID %d)，先 xai status / xai stop", pid)
 	}
 
 	// config (email mode etc.)
@@ -287,7 +287,7 @@ func cmdStart(args []string) error {
 	fmt.Printf("    日志:   %s\n", logPath)
 	fmt.Printf("    输出:   %s\n", filepath.Join(p.Outputs, runID))
 	fmt.Printf("    配置:   %s  |  示例: %s\n", p.Config, config.ExamplePath(p.Root))
-	fmt.Printf("    查看:   grok status  |  grok logs -f  |  grok config\n")
+	fmt.Printf("    查看:   xai status  |  xai logs -f  |  xai config\n")
 	return nil
 }
 
@@ -525,7 +525,7 @@ func cmdStop() error {
 	return nil
 }
 
-// stopClearanceStackOnStop mirrors CLEARANCE_AUTO_STOP for manual `grok stop`.
+// stopClearanceStackOnStop mirrors CLEARANCE_AUTO_STOP for manual `xai stop`.
 func stopClearanceStackOnStop(p home.Paths) {
 	cfg, err := config.Load(p.Config)
 	if err != nil {
@@ -582,21 +582,21 @@ func cmdLogs(args []string) error {
 			}
 			minLevel = lv
 		case a == "-h" || a == "--help":
-			fmt.Print(`grok logs — 查看 / 跟踪运行日志
+			fmt.Print(`xai logs — 查看 / 跟踪运行日志
 
 用法:
-  grok logs                     打印最近日志（默认 ≥ info，隐藏 DBG）
-  grok logs -f                  实时跟踪
-  grok logs -f --debug          显示 DBG 及全部
-  grok logs --warn              仅警告与错误
-  grok logs --level=error       仅错误
-  grok logs -l debug -f         同上
+  xai logs                     打印最近日志（默认 ≥ info，隐藏 DBG）
+  xai logs -f                  实时跟踪
+  xai logs -f --debug          显示 DBG 及全部
+  xai logs --warn              仅警告与错误
+  xai logs --level=error       仅错误
+  xai logs -l debug -f         同上
 
 说明: 磁盘日志始终完整写入；等级只过滤终端显示。
 `)
 			return nil
 		default:
-			return fmt.Errorf("未知 logs 参数: %s（见 grok logs --help）", a)
+			return fmt.Errorf("未知 logs 参数: %s（见 xai logs --help）", a)
 		}
 	}
 	p, err := paths()
@@ -709,10 +709,10 @@ func latestLog(dir string) string {
 
 func cmdReoauth(args []string) error {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Print(`grok reoauth — 对已有账号重新拿 CPA 凭证（重登）
+		fmt.Print(`xai reoauth — 对已有账号重新拿 CPA 凭证（重登）
 
 用法:
-  grok reoauth <path> [选项]
+  xai reoauth <path> [选项]
 
 <path> 可以是:
   · inspection 导出 JSON（含 results[].email，如 quota_exhausted 报告）
@@ -729,7 +729,7 @@ func cmdReoauth(args []string) error {
 
 选项:
   --thread N / -j N   并发 (1-8，默认 2)
-  --out DIR           CPA 输出目录（默认 ~/.grok/outputs/reoauth-<时间>/CPA）
+  --out DIR           CPA 输出目录（默认 ~/.xai/outputs/reoauth-<时间>/CPA）
   --no-lookup         不扫描本地 outputs 补全凭证
   --no-probe          写出前不做 cli-chat-proxy 探活
   --interval SEC      两次请求最小间隔（默认 2）
@@ -737,9 +737,9 @@ func cmdReoauth(args []string) error {
   --no-upload         禁止上传（覆盖 config）
 
 示例:
-  grok reoauth ./grok-inspection-quota_exhausted-....json
-  grok reoauth ~/.grok/outputs/20260723-232838/CPA --thread 3
-  grok reoauth ~/.grok/outputs/20260723-232838/SSO/accounts.txt --out /tmp/cpa-re
+  xai reoauth ./grok-inspection-quota_exhausted-....json
+  xai reoauth ~/.xai/outputs/20260723-232838/CPA --thread 3
+  xai reoauth ~/.xai/outputs/20260723-232838/SSO/accounts.txt --out /tmp/cpa-re
 `)
 		return nil
 	}
@@ -807,7 +807,7 @@ func cmdReoauth(args []string) error {
 		case a == "-h" || a == "--help":
 			return cmdReoauth(nil)
 		case strings.HasPrefix(a, "-"):
-			return fmt.Errorf("未知参数: %s（见 grok reoauth -h）", a)
+			return fmt.Errorf("未知参数: %s（见 xai reoauth -h）", a)
 		default:
 			if path == "" {
 				path = a
@@ -817,7 +817,7 @@ func cmdReoauth(args []string) error {
 		}
 	}
 	if path == "" {
-		return fmt.Errorf("需要 path（见 grok reoauth -h）")
+		return fmt.Errorf("需要 path（见 xai reoauth -h）")
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {

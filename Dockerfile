@@ -28,7 +28,7 @@ COPY internal/ ./internal/
 RUN CGO_ENABLED=0 go build \
       -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
-      -o /out/grok ./cmd/grok
+      -o /out/xai ./cmd/grok
 
 # ---------- Stage 2: runtime ----------
 FROM python:${PYTHON_VERSION}-slim-${DEBIAN} AS runtime
@@ -57,7 +57,7 @@ RUN /opt/cloakbrowser-venv/bin/pip install -r /tmp/req.txt && rm /tmp/req.txt
 RUN /opt/cloakbrowser-venv/bin/python -m cloakbrowser install
 
 # Install grok binary + turnstile mint helper.
-COPY --from=builder /out/grok /usr/local/bin/grok
+COPY --from=builder /out/xai /usr/local/bin/xai
 COPY scripts/turnstile_mint.py /usr/local/share/grok-reg/turnstile_mint.py
 
 # Default env (override via docker-compose / -e).

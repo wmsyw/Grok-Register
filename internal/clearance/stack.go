@@ -14,14 +14,23 @@ import (
 )
 
 // Project containers from clearance/docker-compose.yml
+// Namespaced as xai-* so an upstream grok-clearance stack can run beside us.
 var stackContainerNames = []string{
-	"grok-clearance-warp",
-	"grok-clearance-privoxy",
-	"grok-clearance-flaresolverr",
+	"xai-clearance-warp",
+	"xai-clearance-privoxy",
+	"xai-clearance-flaresolverr",
 }
 
+// Default host ports (offset from upstream grok 40000/40080/8191).
+const (
+	DefaultPrivoxyPort      = 41080
+	DefaultFlareSolverrPort = 8291
+	DefaultWarpSocksPort    = 41000
+)
+
 // ResolveComposeDir finds the clearance compose directory.
-// Order: explicit, GROK_CLEARANCE_DIR, common install paths, cwd.
+// Order: explicit, XAI_CLEARANCE_DIR / GROK_CLEARANCE_DIR, this-fork install paths, cwd.
+// Intentionally does NOT fall back to /opt/Grok-Register (upstream install).
 func ResolveComposeDir(explicit string) string {
 	try := func(p string) string {
 		p = strings.TrimSpace(p)
@@ -37,12 +46,14 @@ func ResolveComposeDir(explicit string) string {
 	if d := try(explicit); d != "" {
 		return d
 	}
-	if d := try(os.Getenv("GROK_CLEARANCE_DIR")); d != "" {
-		return d
+	for _, env := range []string{"XAI_CLEARANCE_DIR", "GROK_CLEARANCE_DIR"} {
+		if d := try(os.Getenv(env)); d != "" {
+			return d
+		}
 	}
 	for _, p := range []string{
-		"/opt/Grok-Register/clearance",
-		"/opt/Grok-Reg/clearance",
+		"/opt/XAI-Register/clearance",
+		"/opt/xai-register/clearance",
 	} {
 		if d := try(p); d != "" {
 			return d
@@ -65,13 +76,13 @@ func ResolveComposeDir(explicit string) string {
 		if d := try(filepath.Join(wd, "clearance")); d != "" {
 			return d
 		}
-		if d := try(filepath.Join(wd, "Grok-Register", "clearance")); d != "" {
+		if d := try(filepath.Join(wd, "XAI-Register", "clearance")); d != "" {
 			return d
 		}
 	}
 	// macOS default install layout
 	if home, err := os.UserHomeDir(); err == nil {
-		if d := try(filepath.Join(home, "Grok-Register", "clearance")); d != "" {
+		if d := try(filepath.Join(home, "XAI-Register", "clearance")); d != "" {
 			return d
 		}
 	}
@@ -115,10 +126,10 @@ func runCompose(dir string, args ...string) (string, error) {
 }
 
 // LocalClearanceProxyDown is true when REGISTER_PROXY points at local privoxy
-// (typically 127.0.0.1:40080) but that port is not accepting connections.
+// (typically 127.0.0.1:41080) but that port is not accepting connections.
 func LocalClearanceProxyDown(registerProxy string, privoxyPort int) bool {
 	if privoxyPort <= 0 {
-		privoxyPort = 40080
+		privoxyPort = DefaultPrivoxyPort
 	}
 	p := strings.TrimSpace(strings.ToLower(registerProxy))
 	if p == "" {
@@ -158,13 +169,13 @@ func EnsureStack(composeDir string, privoxyPort, flaresolverrPort int) (string, 
 	}
 	dir := ResolveComposeDir(composeDir)
 	if dir == "" {
-		return "", fmt.Errorf("找不到 clearance/docker-compose.yml（可设 GROK_CLEARANCE_DIR）")
+		return "", fmt.Errorf("找不到 clearance/docker-compose.yml（可设 XAI_CLEARANCE_DIR）")
 	}
 	if privoxyPort <= 0 {
-		privoxyPort = 40080
+		privoxyPort = DefaultPrivoxyPort
 	}
 	if flaresolverrPort <= 0 {
-		flaresolverrPort = 8191
+		flaresolverrPort = DefaultFlareSolverrPort
 	}
 
 	if StackRunning() && portOpen("127.0.0.1", privoxyPort) {
@@ -187,7 +198,7 @@ func EnsureStack(composeDir string, privoxyPort, flaresolverrPort int) (string, 
 			if proxyEgressOK(privoxyPort, 8*time.Second) {
 				return fmt.Sprintf("清障栈已就绪 dir=%s（端口+WARP 出口 OK）", dir), nil
 			}
-			last = "端口已开，等待 WARP 出口（via :40080）…"
+			last = "端口已开，等待 WARP 出口（via :41080）…"
 			time.Sleep(3 * time.Second)
 			continue
 		}

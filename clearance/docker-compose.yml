@@ -1,27 +1,26 @@
-# Standalone CF clearance stack for grok-free-register.
+# Standalone CF clearance stack for XAI-Register (side-by-side with upstream grok).
 # No app dependency — only WARP (SOCKS5) + Privoxy (HTTP) + FlareSolverr.
 #
 #   cd clearance && docker compose up -d
 #
-# Host ports (loopback only):
-#   127.0.0.1:40000  → WARP SOCKS5
-#   127.0.0.1:40080  → Privoxy HTTP (→ WARP)
-#   127.0.0.1:8191   → FlareSolverr
+# Host ports (loopback only) — OFFSET from upstream grok 40000/40080/8191:
+#   127.0.0.1:41000  → WARP SOCKS5
+#   127.0.0.1:41080  → Privoxy HTTP (→ WARP)
+#   127.0.0.1:8291   → FlareSolverr
 #
-# Wire into project root .env:
-#   REGISTER_PROXY=http://127.0.0.1:40080
+# Wire into project config.env:
+#   REGISTER_PROXY=http://127.0.0.1:41080
 #   CLEARANCE_ENABLED=1
-#   FLARESOLVERR_URL=http://127.0.0.1:8191
+#   FLARESOLVERR_URL=http://127.0.0.1:8291
 #   CLEARANCE_PROXY=http://privoxy:8118
 #   CLEARANCE_URLS=https://accounts.x.ai,https://x.ai,https://status.x.ai,https://console.x.ai,https://auth.x.ai
 #
-# Do not run this stack and another compose that binds the same host ports
-# at the same time (any other WARP/FS stack already on 40000/40080/8191).
+# Safe to run beside an original grok-clearance stack on 40000/40080/8191.
 
 services:
   warp-proxy:
     image: caomingjun/warp:latest
-    container_name: grok-clearance-warp
+    container_name: xai-clearance-warp
     restart: unless-stopped
     environment:
       WARP_SLEEP: "2"
@@ -34,7 +33,7 @@ services:
       net.ipv6.conf.all.disable_ipv6: 0
       net.ipv4.conf.all.src_valid_mark: 1
     ports:
-      - "127.0.0.1:${WARP_SOCKS_PORT:-40000}:1080"
+      - "127.0.0.1:${WARP_SOCKS_PORT:-41000}:1080"
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1', 1080), 5); s.close()\""]
       interval: 30s
@@ -44,7 +43,7 @@ services:
 
   privoxy:
     image: lusky3/privoxy:latest
-    container_name: grok-clearance-privoxy
+    container_name: xai-clearance-privoxy
     restart: unless-stopped
     depends_on:
       warp-proxy:
@@ -52,7 +51,7 @@ services:
     volumes:
       - ./privoxy-warp.conf:/etc/privoxy/config:ro
     ports:
-      - "127.0.0.1:${PRIVOXY_PORT:-40080}:8118"
+      - "127.0.0.1:${PRIVOXY_PORT:-41080}:8118"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8118 || exit 1"]
       interval: 30s
@@ -62,14 +61,14 @@ services:
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
-    container_name: grok-clearance-flaresolverr
+    container_name: xai-clearance-flaresolverr
     restart: unless-stopped
     environment:
       LOG_LEVEL: ${FLARESOLVERR_LOG_LEVEL:-info}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "127.0.0.1:${FLARESOLVERR_PORT:-8191}:8191"
-    # Proxy for minting is NOT set here — grok_register/clearance.py
+      - "127.0.0.1:${FLARESOLVERR_PORT:-8291}:8191"
+    # Proxy for minting is NOT set here — clearance manager
     # passes CLEARANCE_PROXY per request (e.g. http://privoxy:8118) so
     # FS browser egress matches REGISTER_PROXY on the host.
     depends_on:
