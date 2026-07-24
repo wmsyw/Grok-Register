@@ -145,15 +145,21 @@ async def mint(
     # Fetch SDK outside the page (page fetch is often CORS/proxy blocked).
     sdk_js = fetch_castle_sdk(proxy)
 
-    headless = mode == "headless"
+    # Prefer headed offscreen (true headless is weaker / flakier for anti-bot SDKs).
+    use_headless = mode == "headless"
+    args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-first-run",
+        "--no-default-browser-check",
+    ]
+    if not use_headless:
+        args.extend(["--window-position=-32000,-32000", "--window-size=900,700"])
     launch: dict = {
         "executable_path": chrome,
-        "headless": headless,
-        "args": [
-            "--disable-blink-features=AutomationControlled",
-            "--no-sandbox",
-            "--disable-dev-shm-usage",
-        ],
+        "headless": use_headless,
+        "args": args,
     }
     if proxy:
         launch["proxy"] = {"server": proxy}

@@ -86,11 +86,11 @@ func Mint(ctx context.Context, opt Options) (string, error) {
 		args = append(args, "--ua", ua)
 	}
 
-	cmd := exec.CommandContext(ctx, py, args...)
+	bin, binArgs := maybeXvfb(py, args, mode)
+	cmd := exec.CommandContext(ctx, bin, binArgs...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	// Avoid leaking host env proxies inconsistently; script uses --proxy.
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
@@ -159,4 +159,28 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// maybeXvfb wraps python with xvfb-run when offscreen is requested and no DISPLAY.
+func maybeXvfb(python string, args []string, mode string) (string, []string) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" || mode == "auto" {
+		mode = "offscreen"
+	}
+	if mode == "headless" {
+		return python, args
+	}
+	if strings.TrimSpace(os.Getenv("DISPLAY")) != "" || strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != "" {
+		return python, args
+	}
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("XAI_CASTLE_NO_XVFB"))); v == "1" || v == "true" {
+		return python, args
+	}
+	xvfb, err := exec.LookPath("xvfb-run")
+	if err != nil {
+		return python, args
+	}
+	out := []string{"-a", python}
+	out = append(out, args...)
+	return xvfb, out
 }
