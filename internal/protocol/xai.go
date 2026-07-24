@@ -152,8 +152,10 @@ func (c *Client) applyClearanceCookies() {
 }
 
 // ApplyCookieHeader injects a browser Cookie header string into the protocol jar
-// for accounts.x.ai (and common x.ai hosts). Used after Castle/Turnstile browser mint
-// so gRPC/Server-Action share CF session traces with Chromium.
+// for accounts.x.ai only. Used after Castle/Turnstile browser mint so signup/gRPC
+// share CF session traces with Chromium.
+// NEVER plant these onto auth.x.ai — clearance cookies there poison device OAuth
+// (invalid_grant Access denied).
 func (c *Client) ApplyCookieHeader(header string) {
 	header = strings.TrimSpace(header)
 	if c == nil || c.sess == nil || header == "" {
@@ -181,7 +183,8 @@ func (c *Client) ApplyCookieHeader(header string) {
 	if len(cookies) == 0 {
 		return
 	}
-	for _, host := range []string{SiteURL, "https://x.ai", "https://auth.x.ai", "https://accounts.x.ai"} {
+	// accounts.x.ai only (signup/protocol). Do not touch auth.x.ai.
+	for _, host := range []string{SiteURL, "https://accounts.x.ai"} {
 		c.sess.SetCookies(host, cookies)
 	}
 }
