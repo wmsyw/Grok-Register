@@ -5,7 +5,8 @@ Browser frontends send castleRequestToken on email-code + signup. Without it,
 x.ai may still return SSO but later OAuth device grants fail with invalid_grant.
 
 Correct Castle v2 usage (not window.Castle):
-  - inject SDK with (0, eval)(src) so IIFE runs
+  - fetch SDK outside the page (avoid CORS)
+  - inject with (0, eval)(src) so IIFE runs
   - window._castle('setAppId', pk)
   - window._castle('createRequestToken')
 
@@ -23,8 +24,9 @@ import glob
 import os
 import sys
 import time
+import urllib.request
 
-# Public Castle publishable key observed on accounts.x.ai (same as grok-build-auth).
+# Public Castle publishable key observed on accounts.x.ai.
 DEFAULT_CASTLE_PK = "pk_p8GGWvD3TmFJZRsX3BQcqAv9aFVispNz"
 DEFAULT_URL = "https://accounts.x.ai/sign-up"
 CDN_V2 = "https://cdn.castle.io/v2/castle.js"
@@ -93,10 +95,40 @@ def has_display() -> bool:
     )
 
 
-async def mint(
-    *,
-    page_url: str,
-    proxy: str,
+def fetch_castle_sdk(proxy: str) -> str:
+    """Download Castle v2 SDK using urllib (supports HTTP proxy)."""
+    for local in (
+        os.environ.get("CASTLE_JS_PATH", "").strip(),
+        "/usr/local/share/xai-reg/castle_v2.js",
+        os.path.join(os.path.dirname(__file__), "castle_v2.js"),
+    ):
+        if local and os.path.isfile(local):
+            with open(local, "r", encoding="utf-8", errors="replace") as f:
+                data = f.read()
+            if len(data) > 100:
+                return data
+
+    handlers = []
+    if proxy:
+        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
+    opener = urllib.request.build_opener(*handlers) if handlers else urllib.request.build_opener()
+    req = urllib.request.Request(
+        CDN_V2,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept": "*/*",
+        },
+    )
+    with opener.open(req, timeout=45) as resp:
+        data = resp.read().decode("utf-8", "replace")
+    if len(data) < 100:
+        raise RuntimeError(f"castle sdk too short ({len(data)})")
+    return data
+
+
 async def mint(
     *,
     page_url: str,
@@ -110,7 +142,7 @@ async def mint(
 ) -> str:
     from playwright.async_api import async_playwright
 
-    # Fetch SDK in Python (page fetch is often CORS/proxy blocked).
+    # Fetch SDK outside the page (page fetch is often CORS/proxy blocked).
     sdk_js = fetch_castle_sdk(proxy)
 
     headless = mode == "headless"
@@ -139,7 +171,7 @@ async def mint(
             await page.goto(page_url, wait_until="domcontentloaded", timeout=int(timeout * 1000))
             await page.wait_for_timeout(500)
 
-            # Inject via (0, eval) so Castle IIFE actually runs (not dead script.textContent).
+            # Inject via (0, eval) so Castle IIFE actually runs.
             await page.evaluate(
                 """(code) => {
                     (0, eval)(code);
@@ -178,68 +210,7 @@ async def mint(
                     """() => ({
                       has_castle: typeof window._castle,
                       has_Castle: typeof window.Castle,
-                      title: document.title||'',
-                    })"""
-                )
-                print(f"diag={diag} last={last_err}", file=sys.stderr)
-            except Exception:
-                print(f"last={last_err}", file=sys.stderr)
-            raise RuntimeError(f"castle timeout ({last_err})")
-        finally:
-            await browser.close()
-
-
-def fetch_castle_sdk(proxy: str) -> str:
-    """Download Castle v2 SDK using urllib (supports HTTP proxy)."""
-    import urllib.request
-
-    # Allow offline/local override.
-    for local in (
-        os.environ.get("CASTLE_JS_PATH", "").strip(),
-        "/usr/local/share/xai-reg/castle_v2.js",
-        os.path.join(os.path.dirname(__file__), "castle_v2.js"),
-    ):
-        if local and os.path.isfile(local):
-            with open(local, "r", encoding="utf-8", errors="replace") as f:
-                data = f.read()
-            if "castle" in data.lower() or "_castle" in data:
-                return data
-
-    handlers = []
-    if proxy:
-        handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
-    opener = urllib.request.build_opener(*handlers) if handlers else urllib.request.build_opener()
-    req = urllib.request.Request(
-        CDN_V2,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Accept": "*/*",
-        },
-    )
-    with opener.open(req, timeout=45) as resp:
-        data = resp.read().decode("utf-8", "replace")
-    if len(data) < 100:
-        raise RuntimeError(f"castle sdk too short ({len(data)})")
-    return data
-            last_err = ""
-            while time.time() < deadline:
-                try:
-                    tok = await page.evaluate(inject)
-                    if tok and isinstance(tok, str) and len(tok) >= 20:
-                        return tok
-                    last_err = f"short token len={len(tok) if isinstance(tok, str) else type(tok)}"
-                except Exception as exc:
-                    last_err = f"{type(exc).__name__}: {exc}"
-                await page.wait_for_timeout(700)
-
-            # diagnostics
-            try:
-                diag = await page.evaluate(
-                    """() => ({
-                      has_castle: typeof window._castle,
-                      has_Castle: typeof window.Castle,
-                      scripts: [...document.querySelectorAll('script[src]')].map(s=>s.src).filter(s=>/castle/i.test(s)).slice(0,5),
-                      title: document.title||'',
+                      title: document.title || '',
                     })"""
                 )
                 print(f"diag={diag} last={last_err}", file=sys.stderr)
@@ -273,7 +244,7 @@ def main() -> int:
     cookies = parse_cookie_header(args.cookie)
     mode = args.mode
     if mode == "auto":
-        mode = "offscreen" if has_display() or True else "headless"
+        mode = "offscreen"
     try:
         token = asyncio.run(
             mint(
