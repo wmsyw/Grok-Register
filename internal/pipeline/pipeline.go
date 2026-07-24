@@ -311,6 +311,12 @@ func (e *Engine) run(ctx context.Context) error {
 		CFTempDomain:      cfg.CFTempEmailDomain,
 		CFTempAuth:        cfg.CFTempEmailAuth,
 		CFTempPrefix:      cfg.CFTempEmailPrefix,
+		IMAPHost:          cfg.IMAPHost,
+		IMAPPort:          cfg.IMAPPort,
+		IMAPUser:          cfg.IMAPUser,
+		IMAPPass:          cfg.IMAPPass,
+		IMAPPlus:          cfg.IMAPPlus,
+		IMAPPoolFile:      cfg.IMAPPoolFile,
 	})
 	switch cfg.EmailMode {
 	case config.EmailTestmail:
@@ -321,9 +327,21 @@ func (e *Engine) run(ctx context.Context) error {
 			dom = "(Worker auto)"
 		}
 		log.Infof("Email mode=cf_temp_email api=%s domain=%s admin=%v", cfg.CFTempEmailAPI, dom, cfg.CFTempEmailAdmin != "")
+	case config.EmailIMAP:
+		host := cfg.IMAPHost
+		if host == "" {
+			host = "imap.gmail.com"
+		}
+		if cfg.IMAPPoolFile != "" {
+			log.Infof("Email mode=imap pool=%s host=%s", cfg.IMAPPoolFile, host)
+		} else {
+			log.Infof("Email mode=imap user=%s plus=%v host=%s", cfg.IMAPUser, cfg.IMAPPlus, host)
+		}
+
 	default:
 		log.Infof("Email mode=%s", cfg.EmailMode)
 	}
+
 	tsMode := cfg.TurnstileMode
 	if tsMode == "" {
 		tsMode = "offscreen"

@@ -22,7 +22,10 @@ const (
 	// EmailCFTemp = dreamhunter2333/cloudflare_temp_email self-hosted Worker
 	// Docs: https://github.com/dreamhunter2333/cloudflare_temp_email
 	EmailCFTemp EmailMode = "cf_temp_email"
+	// EmailIMAP = Gmail/other IMAP (app password). Prefer real @gmail.com for OAuth grant.
+	EmailIMAP EmailMode = "imap"
 )
+
 
 type Config struct {
 	EmailMode   EmailMode
@@ -45,6 +48,17 @@ type Config struct {
 	CFTempEmailDomain string
 	CFTempEmailAuth   string
 	CFTempEmailPrefix bool
+
+	// IMAP / Gmail — EMAIL_MODE=imap
+	// IMAP_POOL_FILE: each line email:app_password (recommended; real gmail boxes)
+	// or IMAP_USER + IMAP_PASS (+ IMAP_PLUS=1 for user+tag@gmail.com)
+	IMAPHost     string
+	IMAPPort     string // default 993
+	IMAPUser     string
+	IMAPPass     string
+	IMAPPlus     bool
+	IMAPPoolFile string
+
 
 	ClearanceEnabled bool
 	// ClearanceMode: auto | always | never
@@ -496,6 +510,33 @@ func applyMap(cfg *Config, env map[string]string) {
 	if v, ok := env["CF_TEMP_EMAIL_PREFIX"]; ok {
 		cfg.CFTempEmailPrefix = truthy(v)
 	}
+	// IMAP / Gmail
+	if v, ok := env["IMAP_HOST"]; ok {
+		cfg.IMAPHost = strings.TrimSpace(v)
+	}
+	if v, ok := env["IMAP_PORT"]; ok {
+		cfg.IMAPPort = strings.TrimSpace(v)
+	}
+	if v, ok := env["IMAP_USER"]; ok {
+		cfg.IMAPUser = strings.TrimSpace(v)
+	}
+	if v, ok := env["IMAP_PASS"]; ok {
+		cfg.IMAPPass = v
+	} else if v, ok := env["IMAP_PASSWORD"]; ok {
+		cfg.IMAPPass = v
+	}
+	if v, ok := env["IMAP_PLUS"]; ok {
+		cfg.IMAPPlus = truthy(v)
+	}
+	if v, ok := env["IMAP_POOL_FILE"]; ok {
+		cfg.IMAPPoolFile = strings.TrimSpace(v)
+	} else if v, ok := env["GMAIL_POOL_FILE"]; ok {
+		cfg.IMAPPoolFile = strings.TrimSpace(v)
+	}
+	if mode := strings.ToLower(string(cfg.EmailMode)); mode == "gmail" || mode == "gmail_imap" {
+		cfg.EmailMode = EmailIMAP
+	}
+
 	if v, ok := env["CLEARANCE_ENABLED"]; ok {
 		cfg.ClearanceEnabled = truthy(v)
 	}

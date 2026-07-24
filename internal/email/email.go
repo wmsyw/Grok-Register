@@ -30,24 +30,27 @@ var codeRe = []*regexp.Regexp{
 }
 
 type Handle struct {
-	Kind     string // lol | mt | custom | testmail | cftemp
+	Kind     string // lol | mt | custom | testmail | cftemp | imap
 	Email    string
 	Password string
 	Token    string
-	Base     string // mail.tm base or cf_temp worker root
+	Base     string // mail.tm base or cf_temp worker root or host:port for imap
 	// testmail.app
 	Tag       string
-	Timestamp int64 // ms — only accept mails after Create()
+	Timestamp int64 // ms - only accept mails after Create()  (imap: unix sec)
 	// cloudflare_temp_email
 	AddressID int64
 }
 
+
 type Provider struct {
-	cfg Config
-	mu  sync.Mutex
+	cfg  Config
+	mu   sync.Mutex
 	// lol rate limit
 	lolNextOK time.Time
+	imap      imapState
 }
+
 
 type Config struct {
 	Mode          config.EmailMode
@@ -59,14 +62,24 @@ type Config struct {
 	TestmailAPIKey    string
 	TestmailNamespace string
 	TestmailDomain    string
-	// cloudflare_temp_email (dreamhunter2333)
+	// cloudflare_temp_email
 	CFTempAPI    string
 	CFTempAdmin  string
 	CFTempDomain string
 	CFTempAuth   string // optional x-custom-auth
 	CFTempPrefix bool
+	// IMAP / Gmail (EMAIL_MODE=imap)
+	// Prefer IMAP_POOL_FILE with real @gmail.com lines (email:app_password).
+	// Or IMAP_USER+IMAP_PASS with IMAP_PLUS=1 for user+tag@gmail.com aliases.
+	IMAPHost     string
+	IMAPPort     string
+	IMAPUser     string
+	IMAPPass     string
+	IMAPPlus     bool
+	IMAPPoolFile string
 	HTTPClient   *http.Client
 }
+
 
 func New(cfg Config) *Provider {
 	if cfg.HTTPClient == nil {
@@ -110,6 +123,13 @@ func (p *Provider) Create() (Handle, error) {
 		}
 		h.Password = password
 		return h, nil
+	case config.EmailIMAP:
+		h, err := p.imapCreate(password)
+		if err != nil {
+			return Handle{}, err
+		}
+		return h, nil
+
 	default:
 		// tempmail.lol then mail.tm family
 		var last error
@@ -353,6 +373,9 @@ func (p *Provider) fetch(h Handle) (string, error) {
 		return p.testmailFetch(h)
 	case "cftemp":
 		return p.cfTempFetch(h)
+	case "imap":
+		return p.imapFetch(h)
+
 	default:
 		return "", fmt.Errorf("unknown handle kind")
 	}
