@@ -17,25 +17,40 @@ const DefaultPK = "pk_p8GGWvD3TmFJZRsX3BQcqAv9aFVispNz"
 
 // Options for Mint.
 type Options struct {
-	Python string
-	Script string
-	Proxy  string
-	URL    string
-	PK     string
-	Cookie string
-	UA     string
-	Mode   string // offscreen|headless|auto
+	Python  string
+	Script  string
+	Proxy   string
+	URL     string
+	PK      string
+	Cookie  string
+	UA      string
+	Mode    string // offscreen|headless|auto
 	Timeout time.Duration
+}
+
+// Result of a Castle mint.
+type Result struct {
+	Token   string
+	Cookies string // "a=b; c=d" from browser jar (CF/castle), no sso
 }
 
 // Mint runs scripts/castle_mint.py and returns a castleRequestToken.
 func Mint(ctx context.Context, opt Options) (string, error) {
+	res, err := MintFull(ctx, opt)
+	if err != nil {
+		return "", err
+	}
+	return res.Token, nil
+}
+
+// MintFull returns token + browser cookies for protocol session reuse.
+func MintFull(ctx context.Context, opt Options) (Result, error) {
 	script := strings.TrimSpace(opt.Script)
 	if script == "" {
 		script = detectScript()
 	}
 	if script == "" {
-		return "", fmt.Errorf("castle_mint.py not found; set XAI_CASTLE_SCRIPT or install scripts/")
+		return Result{}, fmt.Errorf("castle_mint.py not found; set XAI_CASTLE_SCRIPT or install scripts/")
 	}
 	py := strings.TrimSpace(opt.Python)
 	if py == "" {
@@ -96,17 +111,26 @@ func Mint(ctx context.Context, opt Options) (string, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("castle mint: %s", truncate(msg, 240))
+		return Result{}, fmt.Errorf("castle mint: %s", truncate(msg, 240))
 	}
 	tok := strings.TrimSpace(stdout.String())
-	if len(tok) < 20 {
-		return "", fmt.Errorf("castle mint: empty token")
-	}
-	// token only — strip accidental newlines
 	if i := strings.IndexAny(tok, "\r\n"); i >= 0 {
 		tok = tok[:i]
 	}
-	return tok, nil
+	if len(tok) < 20 {
+		return Result{}, fmt.Errorf("castle mint: empty token")
+	}
+	return Result{Token: tok, Cookies: parseCookiesLine(stderr.String())}, nil
+}
+
+func parseCookiesLine(stderr string) string {
+	for _, line := range strings.Split(stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "COOKIES:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "COOKIES:"))
+		}
+	}
+	return ""
 }
 
 func detectScript() string {

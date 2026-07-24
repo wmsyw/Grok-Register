@@ -721,7 +721,7 @@ func (e *Engine) pWorker(ctx context.Context, id int) {
 		// Share physical browser cap with Turnstile to avoid concurrent Chromium crashes.
 		castleCreate := ""
 		if err := e.phys.Acquire(ctx); err == nil {
-			tok, cerr := castle.Mint(ctx, castle.Options{
+			cres, cerr := castle.MintFull(ctx, castle.Options{
 				Proxy:   e.opt.Cfg.RegisterProxy,
 				URL:     protocol.SiteURL + "/sign-up",
 				Timeout: 60 * time.Second,
@@ -730,7 +730,13 @@ func (e *Engine) pWorker(ctx context.Context, id int) {
 			if cerr != nil {
 				log.Debugf("[P%d] castle mint (create-email): %v", id, cerr)
 			} else {
-				castleCreate = tok
+				castleCreate = cres.Token
+				if cres.Cookies != "" {
+					e.xai.ApplyCookieHeader(cres.Cookies)
+					log.Debugf("[P%d] castle create-email ok len=%d cookies=%d", id, len(castleCreate), len(cres.Cookies))
+				} else {
+					log.Debugf("[P%d] castle create-email ok len=%d", id, len(castleCreate))
+				}
 			}
 		}
 		if err := e.xai.CreateEmailCodeCastle(h.Email, castleCreate); err != nil {
@@ -799,10 +805,10 @@ func (e *Engine) cWorker(ctx context.Context, id int, scfg protocol.SignupConfig
 		if err := e.xai.ValidatePassword(q.Email, q.Password); err != nil {
 			log.Debugf("validate_password skip/fail %s: %v", q.Email, err)
 		}
-		// Fresh Castle token for signup Server Action (castleRequestToken).
+		// Fresh Castle token for signup Server Action (castleRequestToken) + CF cookie sync.
 		castleSignup := ""
 		if err := e.phys.Acquire(ctx); err == nil {
-			tok, cerr := castle.Mint(ctx, castle.Options{
+			cres, cerr := castle.MintFull(ctx, castle.Options{
 				Proxy:   e.opt.Cfg.RegisterProxy,
 				URL:     protocol.SiteURL + "/sign-up",
 				Timeout: 60 * time.Second,
@@ -811,8 +817,11 @@ func (e *Engine) cWorker(ctx context.Context, id int, scfg protocol.SignupConfig
 			if cerr != nil {
 				log.Debugf("castle mint (signup) %s: %v", q.Email, cerr)
 			} else {
-				castleSignup = tok
-				log.Debugf("castle signup ok len=%d", len(castleSignup))
+				castleSignup = cres.Token
+				if cres.Cookies != "" {
+					e.xai.ApplyCookieHeader(cres.Cookies)
+				}
+				log.Debugf("castle signup ok len=%d cookies=%v", len(castleSignup), cres.Cookies != "")
 			}
 		}
 		body := protocol.BuildSignupBodyCastle(q.Email, q.Password, q.Code, token, castleSignup)

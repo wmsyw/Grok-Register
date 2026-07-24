@@ -151,6 +151,42 @@ func (c *Client) applyClearanceCookies() {
 	}
 }
 
+// ApplyCookieHeader injects a browser Cookie header string into the protocol jar
+// for accounts.x.ai (and common x.ai hosts). Used after Castle/Turnstile browser mint
+// so gRPC/Server-Action share CF session traces with Chromium.
+func (c *Client) ApplyCookieHeader(header string) {
+	header = strings.TrimSpace(header)
+	if c == nil || c.sess == nil || header == "" {
+		return
+	}
+	var cookies []*http.Cookie
+	for _, part := range strings.Split(header, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" || !strings.Contains(part, "=") {
+			continue
+		}
+		name, val, _ := strings.Cut(part, "=")
+		name = strings.TrimSpace(name)
+		val = strings.TrimSpace(val)
+		if name == "" {
+			continue
+		}
+		// Never clobber session SSO via browser dump.
+		ln := strings.ToLower(name)
+		if ln == "sso" || ln == "sso-rw" {
+			continue
+		}
+		cookies = append(cookies, &http.Cookie{Name: name, Value: val, Path: "/"})
+	}
+	if len(cookies) == 0 {
+		return
+	}
+	for _, host := range []string{SiteURL, "https://x.ai", "https://auth.x.ai", "https://accounts.x.ai"} {
+		c.sess.SetCookies(host, cookies)
+	}
+}
+
+
 func (c *Client) Config() SignupConfig {
 	c.mu.Lock()
 	defer c.mu.Unlock()

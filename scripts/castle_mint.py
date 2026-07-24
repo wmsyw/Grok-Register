@@ -205,6 +205,19 @@ async def mint(
                         pk,
                     )
                     if tok and isinstance(tok, str) and len(tok) >= 20:
+                        try:
+                            cks = await context.cookies()
+                            # Prefer CF / castle related cookies for protocol reuse.
+                            parts = []
+                            for c in cks:
+                                n = c.get("name") or ""
+                                if n.lower() in {"sso", "sso-rw"}:
+                                    continue
+                                parts.append(f"{n}={c.get('value','')}")
+                            if parts:
+                                print("COOKIES: " + "; ".join(parts), file=sys.stderr)
+                        except Exception:
+                            pass
                         return tok
                     last_err = f"short token len={len(tok) if isinstance(tok, str) else type(tok)}"
                 except Exception as exc:
