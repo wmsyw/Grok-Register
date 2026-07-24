@@ -34,6 +34,7 @@ install:
 	install -d $(SHAREDIR)
 	install -m 755 scripts/turnstile_mint.py $(SHAREDIR)/turnstile_mint.py
 	install -m 755 scripts/turnstile_pool.py $(SHAREDIR)/turnstile_pool.py
+	install -m 755 scripts/castle_mint.py $(SHAREDIR)/castle_mint.py
 	@echo "installed: $(BINDIR)/$(APP)"
 	@echo "installed: $(SHAREDIR)/turnstile_mint.py"
 	@echo "installed: $(SHAREDIR)/turnstile_pool.py"

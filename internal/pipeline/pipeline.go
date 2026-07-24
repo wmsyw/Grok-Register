@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/grok-free-register/grok-reg/internal/castle"
 	"github.com/grok-free-register/grok-reg/internal/clearance"
 	"github.com/grok-free-register/grok-reg/internal/config"
 	"github.com/grok-free-register/grok-reg/internal/cpa"
@@ -716,7 +717,18 @@ func (e *Engine) pWorker(ctx context.Context, id int) {
 			}
 			continue
 		}
-		if err := e.xai.CreateEmailCode(h.Email); err != nil {
+		// Castle request token on create-email (protobuf field 3). Missing token → low-trust SSO.
+		castleCreate, cerr := castle.Mint(ctx, castle.Options{
+			Proxy:   e.opt.Cfg.RegisterProxy,
+			URL:     protocol.SiteURL + "/sign-up",
+			Timeout: 60 * time.Second,
+		})
+		if cerr != nil {
+			log.Debugf("[P%d] castle mint (create-email): %v", id, cerr)
+			// still try without castle; success rate lower
+			castleCreate = ""
+		}
+		if err := e.xai.CreateEmailCodeCastle(h.Email, castleCreate); err != nil {
 			e.qPending.Release()
 			e.releaseReserve()
 			log.Debugf("[P%d] create code %s: %v", id, h.Email, err)
@@ -782,7 +794,19 @@ func (e *Engine) cWorker(ctx context.Context, id int, scfg protocol.SignupConfig
 		if err := e.xai.ValidatePassword(q.Email, q.Password); err != nil {
 			log.Debugf("validate_password skip/fail %s: %v", q.Email, err)
 		}
-		body := protocol.BuildSignupBody(q.Email, q.Password, q.Code, token)
+		// Fresh Castle token for signup Server Action (castleRequestToken).
+		castleSignup, cerr := castle.Mint(ctx, castle.Options{
+			Proxy:   e.opt.Cfg.RegisterProxy,
+			URL:     protocol.SiteURL + "/sign-up",
+			Timeout: 60 * time.Second,
+		})
+		if cerr != nil {
+			log.Debugf("castle mint (signup) %s: %v", q.Email, cerr)
+			castleSignup = ""
+		} else {
+			log.Debugf("castle signup ok len=%d", len(castleSignup))
+		}
+		body := protocol.BuildSignupBodyCastle(q.Email, q.Password, q.Code, token, castleSignup)
 		text, sso, err := e.xai.SignupServerAction(body, scfg.ActionID, scfg.StateTree)
 		if sso == "" {
 			sso = protocol.ExtractSSOFromText(text)
@@ -908,11 +932,17 @@ func (e *Engine) oauthWorker(ctx context.Context, id int) {
 				return "", err
 			}
 			tok, err := e.turn.Solve(ctx, siteKey, pageURL)
-			e.phys.Release()
 			if err != nil {
+				e.phys.Release()
 				return "", fmt.Errorf("create_session turnstile: %w", err)
 			}
-			ns, err := e.xai.CreateSession(job.Email, job.Password, tok)
+			castleTok, _ := castle.Mint(ctx, castle.Options{
+				Proxy:   e.opt.Cfg.RegisterProxy,
+				URL:     pageURL,
+				Timeout: 45 * time.Second,
+			})
+			e.phys.Release()
+			ns, err := e.xai.CreateSessionCastle(job.Email, job.Password, tok, castleTok)
 			if err != nil {
 				return "", err
 			}
