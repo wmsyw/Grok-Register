@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -308,6 +309,27 @@ func principalFromSSO(sso string) string {
 	return ""
 }
 
+// principalFromConsentHTML scrapes accounts.x.ai consent RSC/HTML for userId.
+// Session SSO JWTs often only carry session_id; the consent page embeds userId.
+func principalFromConsentHTML(html string) string {
+	if html == "" {
+		return ""
+	}
+	// Prefer explicit userId UUID in flight payload / HTML.
+	patterns := []string{
+		`"userId"\s*:\s*"([0-9a-fA-F-]{16,})"`,
+		`userId\\?"\s*:\s*\\?"([0-9a-fA-F-]{16,})`,
+		`"user_id"\s*:\s*"([0-9a-fA-F-]{16,})"`,
+	}
+	for _, pat := range patterns {
+		re := regexp.MustCompile(pat)
+		if m := re.FindStringSubmatch(html); len(m) > 1 {
+			return m[1]
+		}
+	}
+	return ""
+}
+
 func isDeviceDone(loc string) bool {
 	if loc == "" {
 		return false
@@ -433,7 +455,7 @@ func (c *Client) ConfirmHTTP(ctx context.Context, sso string, flow DeviceFlow) e
 	if pid := principalFromSSO(sso); pid != "" {
 		aform.Set("principal_id", pid)
 	}
-	if fields, htmlCookie := c.loadConsentForm(ctx, consentRef, cookie); len(fields) > 0 {
+	if fields, html, htmlCookie := c.loadConsentForm(ctx, consentRef, cookie); len(fields) > 0 || html != "" {
 		cookie = htmlCookie
 		for k, vs := range fields {
 			if k == "action" {
@@ -449,6 +471,12 @@ func (c *Client) ConfirmHTTP(ctx context.Context, sso string, flow DeviceFlow) e
 		}
 		if aform.Get("principal_type") == "" {
 			aform.Set("principal_type", "User")
+		}
+		// Consent form often leaves principal_id empty; page RSC embeds userId.
+		if aform.Get("principal_id") == "" {
+			if pid := principalFromConsentHTML(html); pid != "" {
+				aform.Set("principal_id", pid)
+			}
 		}
 	}
 
@@ -583,13 +611,14 @@ func (c *Client) getWithCookie(ctx context.Context, rawURL, cookie string) (int,
 }
 
 // loadConsentForm GETs consent page and extracts form fields (principal_id, csrf, etc.).
-func (c *Client) loadConsentForm(ctx context.Context, consentURL, cookie string) (url.Values, string) {
+// Returns fields, raw HTML (for RSC userId scrape), and cookie string.
+func (c *Client) loadConsentForm(ctx context.Context, consentURL, cookie string) (url.Values, string, string) {
 	st, html, err := c.getWithCookie(ctx, consentURL, cookie)
 	if err != nil || st >= 400 {
-		return nil, cookie
+		return nil, "", cookie
 	}
 	fields := parseHTMLFormFields(html)
-	return fields, cookie
+	return fields, html, cookie
 }
 
 func parseHTMLFormFields(html string) url.Values {
