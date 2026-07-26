@@ -61,9 +61,9 @@ COPY --from=builder /out/xai /usr/local/bin/xai
 COPY scripts/turnstile_mint.py /usr/local/share/grok-reg/turnstile_mint.py
 
 # Default env (override via docker-compose / -e).
-ENV GROK_HOME=/data \
-    GROK_PYTHON=/opt/cloakbrowser-venv/bin/python \
-    GROK_TURNSTILE_SCRIPT=/usr/local/share/grok-reg/turnstile_mint.py \
+ENV XAI_HOME=/data \
+    XAI_PYTHON=/opt/cloakbrowser-venv/bin/python \
+    XAI_TURNSTILE_SCRIPT=/usr/local/share/grok-reg/turnstile_mint.py \
     CLOAKBROWSER_SUPPRESS_FONT_WARNING=1 \
     PYTHONUNBUFFERED=1
 
@@ -77,5 +77,5 @@ COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Default mode = idle (long-running container user can `docker exec` into).
-# Set MODE=run + GROK_TARGET=N to run one batch in the foreground.
+# Set MODE=run + XAI_TARGET=N to run one batch in the foreground.
 CMD ["idle"]

@@ -50,7 +50,7 @@ func (p *PlaywrightBridge) Solve(ctx context.Context, siteKey, pageURL string) (
 	defer p.mu.Unlock()
 
 	if p.ScriptPath == "" {
-		return "", fmt.Errorf("turnstile_mint.py not found; keep Grok-Reg/scripts next to binary or set GROK_TURNSTILE_SCRIPT")
+		return "", fmt.Errorf("turnstile_mint.py not found; install scripts/ or set XAI_TURNSTILE_SCRIPT")
 	}
 	if p.Python == "" {
 		return "", fmt.Errorf("python3 not found for Playwright turnstile mint")
@@ -77,7 +77,7 @@ func (p *PlaywrightBridge) Solve(ctx context.Context, siteKey, pageURL string) (
 	// Do NOT inject FlareSolverr cookies/UA by default.
 	// Manual mint without them succeeds; injecting FS UA+cookies into CloakBrowser
 	// often yields iframes=0 / no token (fingerprint + session mismatch).
-	// Opt-in: GROK_TURNSTILE_INJECT_CLEARANCE=1
+	// Opt-in: XAI_TURNSTILE_INJECT_CLEARANCE=1
 	if injectClearance() && p.Clear != nil {
 		if h := p.Clear.CookieHeader(); h != "" {
 			args = append(args, "--cookie", h)
@@ -139,7 +139,7 @@ func maybeXvfb(python string, args []string, mode string) (string, []string) {
 		return python, args
 	}
 	// explicit opt-out
-	v := strings.ToLower(strings.TrimSpace(os.Getenv("GROK_TURNSTILE_NO_XVFB")))
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("XAI_TURNSTILE_NO_XVFB")))
 	if v == "1" || v == "true" || v == "yes" {
 		return python, args
 	}
@@ -154,25 +154,18 @@ func maybeXvfb(python string, args []string, mode string) (string, []string) {
 }
 
 func injectClearance() bool {
-	v := strings.TrimSpace(strings.ToLower(firstEnv("XAI_TURNSTILE_INJECT_CLEARANCE", "GROK_TURNSTILE_INJECT_CLEARANCE")))
+	v := strings.TrimSpace(strings.ToLower(os.Getenv("XAI_TURNSTILE_INJECT_CLEARANCE")))
 	return v == "1" || v == "true" || v == "yes" || v == "on"
-}
-
-func firstEnv(keys ...string) string {
-	for _, k := range keys {
-		if v := strings.TrimSpace(os.Getenv(k)); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func findPython() string {
 	for _, name := range []string{
-		firstEnv("XAI_PYTHON", "GROK_PYTHON"),
+		strings.TrimSpace(os.Getenv("XAI_PYTHON")),
 		"/opt/xai-cloakbrowser-venv/bin/python",
-		"/opt/cloakbrowser-venv/bin/python", // shared fallback only
 		"/opt/XAI-Register/.venv/bin/python",
+		// Last resort: upstream's venv. Read-only use of its interpreter — we never
+		// write to it, and XAI_PYTHON/our own venv always win.
+		"/opt/cloakbrowser-venv/bin/python",
 		"python3",
 		"python",
 	} {
@@ -193,7 +186,7 @@ func findPython() string {
 }
 
 func findMintScript() string {
-	if p := firstEnv("XAI_TURNSTILE_SCRIPT", "GROK_TURNSTILE_SCRIPT"); p != "" {
+	if p := strings.TrimSpace(os.Getenv("XAI_TURNSTILE_SCRIPT")); p != "" {
 		if fileExists(p) {
 			return p
 		}

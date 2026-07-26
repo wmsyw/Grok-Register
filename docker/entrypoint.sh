@@ -19,12 +19,12 @@ mode="${1:-${MODE:-idle}}"
 # `MODE=run` 也可能作为环境变量传入，shell 形式 CMD 不带参数；兼容两者。
 if [ "$mode" = "" ]; then mode=idle; fi
 
-# GROK_HOME 必须存在且可写。compose 挂的 ./data 这里自动建。
-mkdir -p "${GROK_HOME:-/data}/logs" "${GROK_HOME:-/data}/outputs"
+# XAI_HOME 必须存在且可写。compose 挂的 ./data 这里自动建。
+mkdir -p "${XAI_HOME:-/data}/logs" "${XAI_HOME:-/data}/outputs"
 
 # 若用户没自带 config.env，挂一份默认进去。
-if [ ! -f "${GROK_HOME:-/data}/config.env" ] && [ -f "/etc/grok/config.env" ]; then
-    cp /etc/grok/config.env "${GROK_HOME:-/data}/config.env"
+if [ ! -f "${XAI_HOME:-/data}/config.env" ] && [ -f "/etc/grok/config.env" ]; then
+    cp /etc/grok/config.env "${XAI_HOME:-/data}/config.env"
 fi
 
 case "$mode" in
@@ -37,10 +37,10 @@ case "$mode" in
     ;;
 
   run|worker)
-    target="${GROK_TARGET:-${TARGET:-10}}"
+    target="${XAI_TARGET:-${TARGET:-10}}"
     echo "[grok-docker] runner 模式 - 前台跑 worker，target=${target}"
     # 生成一个 runID（与 xai 内部 NewRunID 同格式），便于 compose logs -t 区分
-    run_id="${GROK_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
+    run_id="${XAI_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
     exec xai --worker --target "${target}" --run-id "${run_id}"
     ;;
 

@@ -29,7 +29,7 @@ const (
 )
 
 // ResolveComposeDir finds the clearance compose directory.
-// Order: explicit, XAI_CLEARANCE_DIR / GROK_CLEARANCE_DIR, this-fork install paths, cwd.
+// Order: explicit, XAI_CLEARANCE_DIR, this-fork install paths, cwd.
 // Intentionally does NOT fall back to /opt/Grok-Register (upstream install).
 func ResolveComposeDir(explicit string) string {
 	try := func(p string) string {
@@ -46,10 +46,8 @@ func ResolveComposeDir(explicit string) string {
 	if d := try(explicit); d != "" {
 		return d
 	}
-	for _, env := range []string{"XAI_CLEARANCE_DIR", "GROK_CLEARANCE_DIR"} {
-		if d := try(os.Getenv(env)); d != "" {
-			return d
-		}
+	if d := try(os.Getenv("XAI_CLEARANCE_DIR")); d != "" {
+		return d
 	}
 	for _, p := range []string{
 		"/opt/XAI-Register/clearance",

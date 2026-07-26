@@ -2,11 +2,11 @@
 # XAI-Register 一键部署（与原版 Grok-Register 路径隔离）
 #
 # Linux (Debian/Ubuntu，需 root/sudo):
-#   curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | sudo bash
 #   # 有 TTY 时会询问：命令名 / 安装目录 / 数据目录（回车=默认）
 #
 # macOS（需已装 Homebrew + Docker Desktop，普通用户即可）:
-#   curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | bash
 #
 # 非交互（CI / 无 TTY）:
 #   curl -fsSL ... | sudo NONINTERACTIVE=1 bash
@@ -43,7 +43,7 @@ esac
 # 默认值
 # ---------------------------------------------------------------------------
 COMMAND_NAME="${COMMAND_NAME:-xai}"
-REPO_URL="${REPO_URL:-https://github.com/Charles-0509/Grok-Register.git}"
+REPO_URL="${REPO_URL:-https://github.com/wmsyw/Grok-Register.git}"
 BRANCH="${BRANCH:-main}"
 GO_VERSION="${GO_VERSION:-1.24.4}"
 SKIP_DOCKER="${SKIP_DOCKER:-0}"
@@ -65,7 +65,8 @@ SET_AUTO_STOP=0
 # 环境变量是否在进脚本前已显式设置（显式则不再交互问该项）
 _ENV_COMMAND_NAME="${COMMAND_NAME-}"
 _ENV_INSTALL_DIR="${INSTALL_DIR-}"
-_ENV_GROK_HOME="${GROK_HOME-}"
+# 只认 XAI_HOME。绝不读 GROK_HOME —— 原版 install.sh 会往 /etc/profile.d 里
+# 全局 export GROK_HOME=~/.grok，读它等于把本 fork 的数据装进原版目录。
 _ENV_XAI_HOME="${XAI_HOME-}"
 _ENV_BIN_DIR="${BIN_DIR-}"
 _ENV_SHARE_DIR="${SHARE_DIR-}"
@@ -83,7 +84,6 @@ SET_NET_MODE=0
 # 非默认命令名视为用户已指定
 [ -n "$_ENV_COMMAND_NAME" ] && [ "$_ENV_COMMAND_NAME" != "xai" ] && SET_COMMAND=1
 [ -n "$_ENV_INSTALL_DIR" ] && SET_INSTALL_DIR=1
-[ -n "$_ENV_GROK_HOME" ] && SET_HOME=1
 [ -n "$_ENV_XAI_HOME" ] && SET_HOME=1
 [ -n "$_ENV_BIN_DIR" ] && SET_BIN_DIR=1
 [ -n "$_ENV_SHARE_DIR" ] && SET_SHARE_DIR=1
@@ -99,14 +99,14 @@ if [ "$OS" = "darwin" ]; then
   _HOME="${HOME:-/Users/$(id -un)}"
   # 与原版 ~/Grok-Register / ~/.grok / cloakbrowser-venv 完全隔离
   INSTALL_DIR="${INSTALL_DIR:-${_HOME}/XAI-Register}"
-  GROK_HOME_OPT="${XAI_HOME:-${GROK_HOME:-${_HOME}/.xai}}"
+  XAI_HOME_OPT="${XAI_HOME:-${_HOME}/.xai}"
   BIN_DIR="${BIN_DIR:-${_HOME}/.local/bin}"
   SHARE_DIR="${SHARE_DIR:-${_HOME}/.local/share/xai-reg}"
   VENV_DIR="${VENV_DIR:-${_HOME}/.local/share/xai-cloakbrowser-venv}"
 else
   # Linux: 不覆盖 /opt/Grok-Register、~/.grok、/opt/cloakbrowser-venv
   INSTALL_DIR="${INSTALL_DIR:-/opt/XAI-Register}"
-  GROK_HOME_OPT="${XAI_HOME:-${GROK_HOME:-}}"
+  XAI_HOME_OPT="${XAI_HOME:-}"
   BIN_DIR="${BIN_DIR:-/usr/local/bin}"
   SHARE_DIR="${SHARE_DIR:-/usr/local/share/xai-reg}"
   VENV_DIR="${VENV_DIR:-/opt/xai-cloakbrowser-venv}"
@@ -178,7 +178,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --command) COMMAND_NAME="$2"; SET_COMMAND=1; shift 2 ;;
     --install-dir) INSTALL_DIR="$2"; SET_INSTALL_DIR=1; shift 2 ;;
-    --home) GROK_HOME_OPT="$2"; SET_HOME=1; shift 2 ;;
+    --home) XAI_HOME_OPT="$2"; SET_HOME=1; shift 2 ;;
     --bin-dir) BIN_DIR="$2"; SET_BIN_DIR=1; shift 2 ;;
     --share-dir) SHARE_DIR="$2"; SET_SHARE_DIR=1; shift 2 ;;
     --venv-dir) VENV_DIR="$2"; SET_VENV_DIR=1; shift 2 ;;
@@ -213,7 +213,7 @@ case "$COMMAND_NAME" in
 esac
 
 # ---------------------------------------------------------------------------
-# 真实调用用户（sudo 时用 SUDO_USER，避免 GROK_HOME 落到 /root）
+# 真实调用用户（sudo 时用 SUDO_USER，避免数据目录落到 /root）
 # ---------------------------------------------------------------------------
 REAL_USER="${SUDO_USER:-$(id -un)}"
 REAL_HOME="${HOME:-}"
@@ -226,14 +226,14 @@ elif [ -z "$REAL_HOME" ]; then
   REAL_HOME="$(eval echo "~$REAL_USER" 2>/dev/null || echo "/root")"
 fi
 
-# Linux 默认 GROK_HOME：优先真实用户 home
-if [ "$OS" = "linux" ] && [ "$SET_HOME" != 1 ] && [ -z "$GROK_HOME_OPT" ]; then
+# Linux 默认数据目录：优先真实用户 home
+if [ "$OS" = "linux" ] && [ "$SET_HOME" != 1 ] && [ -z "$XAI_HOME_OPT" ]; then
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    GROK_HOME_OPT="${REAL_HOME}/.xai"
+    XAI_HOME_OPT="${REAL_HOME}/.xai"
   elif [ "$(id -u)" -eq 0 ]; then
-    GROK_HOME_OPT="/root/.xai"
+    XAI_HOME_OPT="/root/.xai"
   else
-    GROK_HOME_OPT="${HOME:-$REAL_HOME}/.xai"
+    XAI_HOME_OPT="${HOME:-$REAL_HOME}/.xai"
   fi
 fi
 
@@ -424,7 +424,7 @@ maybe_prompt_paths() {
     prompt_value INSTALL_DIR "源码安装目录" "$INSTALL_DIR"
   fi
   if [ "$SET_HOME" != 1 ]; then
-    prompt_value GROK_HOME_OPT "数据目录 XAI_HOME (~/.xai，与原版 ~/.grok 隔离)" "$GROK_HOME_OPT"
+    prompt_value XAI_HOME_OPT "数据目录 XAI_HOME (~/.xai，与原版 ~/.grok 隔离)" "$XAI_HOME_OPT"
   fi
   if [ "$SET_BIN_DIR" != 1 ]; then
     prompt_value BIN_DIR "二进制目录" "$BIN_DIR"
@@ -439,7 +439,7 @@ maybe_prompt_paths() {
   ok "将使用:"
   echo "  命令:   $COMMAND_NAME" >/dev/tty
   echo "  源码:   $INSTALL_DIR" >/dev/tty
-  echo "  数据:   $GROK_HOME_OPT" >/dev/tty
+  echo "  数据:   $XAI_HOME_OPT" >/dev/tty
   echo "  二进制: $BIN_DIR/$COMMAND_NAME" >/dev/tty
   echo "  venv:   $VENV_DIR" >/dev/tty
   case "$NET_MODE" in
@@ -462,6 +462,11 @@ maybe_prompt_paths() {
 }
 
 maybe_prompt_paths
+
+# CloakBrowser 的 Chromium 缓存。默认 ~/.cloakbrowser 是原版 grok 也在用的目录，
+# 而 cloakbrowser 解包前会 shutil.rmtree(dest_dir) —— 两边版本不同就会互相删。
+# 放到 fork 自己的 SHARE_DIR 下，两套各存一份。
+CLOAK_CACHE_DIR="${CLOAKBROWSER_CACHE_DIR:-${SHARE_DIR}/cloakbrowser}"
 
 # ---------------------------------------------------------------------------
 # 公共：从仓库 example 种子化 config.env（分区 + 中文注释）
@@ -717,9 +722,16 @@ install_browser() {
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     cb_home="$REAL_HOME"
   fi
-  HOME="$cb_home" "${VENV_DIR}/bin/python" -m cloakbrowser install || \
-    HOME="$cb_home" "${VENV_DIR}/bin/python" -m cloakbrowser install
-  ok "浏览器依赖就绪 (CloakBrowser home=$cb_home)"
+  mkdir -p "$CLOAK_CACHE_DIR"
+  HOME="$cb_home" CLOAKBROWSER_CACHE_DIR="$CLOAK_CACHE_DIR" \
+    "${VENV_DIR}/bin/python" -m cloakbrowser install || \
+  HOME="$cb_home" CLOAKBROWSER_CACHE_DIR="$CLOAK_CACHE_DIR" \
+    "${VENV_DIR}/bin/python" -m cloakbrowser install
+  if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+    chown -R "${SUDO_USER}:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" \
+      "$CLOAK_CACHE_DIR" 2>/dev/null || true
+  fi
+  ok "浏览器依赖就绪 (CloakBrowser cache=$CLOAK_CACHE_DIR)"
 }
 
 start_clearance() {
@@ -748,7 +760,7 @@ chown_if_sudo_user() {
   if [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     local grp
     grp="$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")"
-    chown -R "${SUDO_USER}:${grp}" "$GROK_HOME_OPT" 2>/dev/null || true
+    chown -R "${SUDO_USER}:${grp}" "$XAI_HOME_OPT" 2>/dev/null || true
     # venv 若在 /opt 保持 root 可执行即可；若在用户目录则 chown
     case "$VENV_DIR" in
       /home/*|"$REAL_HOME"/*) chown -R "${SUDO_USER}:${grp}" "$VENV_DIR" 2>/dev/null || true ;;
@@ -784,38 +796,47 @@ merge_upgrade_keys() {
 }
 
 prepare_data_dir() {
-  log "准备数据目录 $GROK_HOME_OPT"
-  mkdir -p "$GROK_HOME_OPT" "$GROK_HOME_OPT/logs" "$GROK_HOME_OPT/outputs"
-  chmod 700 "$GROK_HOME_OPT" 2>/dev/null || true
+  log "准备数据目录 $XAI_HOME_OPT"
+  mkdir -p "$XAI_HOME_OPT" "$XAI_HOME_OPT/logs" "$XAI_HOME_OPT/outputs"
+  chmod 700 "$XAI_HOME_OPT" 2>/dev/null || true
 
   if [ -f "$INSTALL_DIR/internal/config/example.env" ]; then
-    cp -f "$INSTALL_DIR/internal/config/example.env" "$GROK_HOME_OPT/config.env.example"
+    cp -f "$INSTALL_DIR/internal/config/example.env" "$XAI_HOME_OPT/config.env.example"
   elif [ -f "$INSTALL_DIR/config.env.example" ]; then
-    cp -f "$INSTALL_DIR/config.env.example" "$GROK_HOME_OPT/config.env.example"
+    cp -f "$INSTALL_DIR/config.env.example" "$XAI_HOME_OPT/config.env.example"
   fi
 
-  if [ ! -f "$GROK_HOME_OPT/config.env" ]; then
+  if [ ! -f "$XAI_HOME_OPT/config.env" ]; then
     log "写入分区中文 config.env（完整模板）"
-    seed_config_from_example "$GROK_HOME_OPT/config.env"
+    seed_config_from_example "$XAI_HOME_OPT/config.env"
   else
     ok "保留已有 config.env"
-    merge_upgrade_keys "$GROK_HOME_OPT/config.env"
+    merge_upgrade_keys "$XAI_HOME_OPT/config.env"
   fi
   chown_if_sudo_user
 }
 
+# 本 fork 的环境变量，唯一真源。三处写入（/etc/profile.d、root bashrc、macOS rc）
+# 都从这里取，避免各写一份后互相漂移。
+# 绝不 export GROK_* —— 原版 grok 的 install.sh 也往 /etc/profile.d 写同名变量，
+# 我们再 export 一遍会把原版的 python / mint 脚本指到本 fork 上。
+xai_env_lines() {
+  cat <<EOF
+export XAI_HOME="${XAI_HOME_OPT}"
+export XAI_PYTHON="${VENV_DIR}/bin/python"
+export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
+export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
+export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
+export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
+export CLOAKBROWSER_CACHE_DIR="${CLOAK_CACHE_DIR}"
+export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
+EOF
+}
+
 print_done() {
   local env_hint="$1"
-  export XAI_HOME="$GROK_HOME_OPT"
-  export XAI_PYTHON="${VENV_DIR}/bin/python"
-  export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-  export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
-  export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
-  export GROK_PYTHON="${VENV_DIR}/bin/python"
-  export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-  export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-  export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
+  # 让本次 shell 里紧接着跑的 `xai help` 用上正确路径
+  eval "$(xai_env_lines)"
 
   echo
   echo "=============================================="
@@ -824,8 +845,8 @@ export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
   echo
   echo "  命令:     ${COMMAND_NAME} help"
   echo "  源码:     ${INSTALL_DIR}"
-  echo "  配置:     ${GROK_HOME_OPT}/config.env"
-  echo "  示例:     ${GROK_HOME_OPT}/config.env.example"
+  echo "  配置:     ${XAI_HOME_OPT}/config.env"
+  echo "  示例:     ${XAI_HOME_OPT}/config.env.example"
   echo "  环境:     ${env_hint}"
   case "$NET_MODE" in
     warp)  echo "  网络:     WARP 清障 (http://127.0.0.1:41080)" ;;
@@ -835,13 +856,13 @@ export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
     echo
     echo "  注意: 请用用户 ${SUDO_USER} 运行（不要长期 root）："
-    echo "    export XAI_HOME=${GROK_HOME_OPT}"
+    echo "    export XAI_HOME=${XAI_HOME_OPT}"
     echo "    export XAI_PYTHON=${VENV_DIR}/bin/python"
   fi
   echo
   echo "快速开始:"
   echo "  export PATH=\"\$PATH:${BIN_DIR}\""
-  echo "  export XAI_HOME=${GROK_HOME_OPT}"
+  echo "  export XAI_HOME=${XAI_HOME_OPT}"
   echo "  export XAI_PYTHON=${VENV_DIR}/bin/python"
   echo "  ${COMMAND_NAME} config              # 编辑配置（分区中文）"
   echo "  ${COMMAND_NAME} start"
@@ -877,7 +898,7 @@ install_linux() {
         exec sudo -E env \
           COMMAND_NAME="$COMMAND_NAME" \
           INSTALL_DIR="$INSTALL_DIR" \
-          GROK_HOME="$GROK_HOME_OPT" \
+          XAI_HOME="$XAI_HOME_OPT" \
           BIN_DIR="$BIN_DIR" \
           SHARE_DIR="$SHARE_DIR" \
           VENV_DIR="$VENV_DIR" \
@@ -896,7 +917,7 @@ install_linux() {
           bash "$self" \
           --command "$COMMAND_NAME" \
           --install-dir "$INSTALL_DIR" \
-          --home "$GROK_HOME_OPT" \
+          --home "$XAI_HOME_OPT" \
           --bin-dir "$BIN_DIR" \
           --share-dir "$SHARE_DIR" \
           --venv-dir "$VENV_DIR" \
@@ -954,7 +975,7 @@ install_linux() {
   echo "=============================================="
   echo "  命令名:     $COMMAND_NAME"
   echo "  源码目录:   $INSTALL_DIR"
-  echo "  数据目录:   $GROK_HOME_OPT"
+  echo "  数据目录:   $XAI_HOME_OPT"
   echo "  二进制:     $BIN_DIR/$COMMAND_NAME"
   echo "  脚本共享:   $SHARE_DIR"
   echo "  Python venv:$VENV_DIR"
@@ -1038,64 +1059,38 @@ install_linux() {
   prepare_data_dir
 
   PROFILE_SNIPPET="/etc/profile.d/xai-register.sh"
-  cat >"$PROFILE_SNIPPET" <<EOF
-# XAI-Register (generated by install.sh)
-export PATH="\$PATH:/usr/local/go/bin:${BIN_DIR}"
-export XAI_HOME="${GROK_HOME_OPT}"
-export XAI_PYTHON="${VENV_DIR}/bin/python"
-export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
-export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
-# 兼容本 fork 旧变量名（不覆盖原版 grok 的 GROK_HOME）
-export GROK_PYTHON="${VENV_DIR}/bin/python"
-export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
-EOF
+  {
+    echo "# XAI-Register (generated by install.sh)"
+    echo "export PATH=\"\$PATH:/usr/local/go/bin:${BIN_DIR}\""
+    xai_env_lines
+  } >"$PROFILE_SNIPPET"
   chmod 644 "$PROFILE_SNIPPET"
 
-  # 写入真实用户 bashrc / zshrc
+  # 写入真实用户 bashrc / zshrc（/etc/profile.d 只对 login shell 生效）
+  _rc_targets=()
   if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    for rc in "${REAL_HOME}/.bashrc" "${REAL_HOME}/.zshrc" "${REAL_HOME}/.profile"; do
-      [ -d "$(dirname "$rc")" ] || continue
-      touch "$rc" 2>/dev/null || continue
-      if ! grep -q 'XAI-Register (generated by install.sh)' "$rc" 2>/dev/null; then
-        {
-          echo ""
-          echo "# XAI-Register (generated by install.sh)"
-          echo "export XAI_HOME=\"${GROK_HOME_OPT}\""
-          echo "export XAI_PYTHON=\"${VENV_DIR}/bin/python\""
-          echo "export XAI_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
-          echo "export XAI_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
-          echo "export XAI_CASTLE_SCRIPT=\"${SHARE_DIR}/castle_mint.py\""
-          echo "export XAI_CLEARANCE_DIR=\"${INSTALL_DIR}/clearance\""
-          echo "export GROK_PYTHON=\"${VENV_DIR}/bin/python\""
-          echo "export GROK_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
-          echo "export GROK_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
-          echo "export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1"
-          echo "export PATH=\"\$PATH:${BIN_DIR}\""
-        } >>"$rc"
-        chown "${SUDO_USER}:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" "$rc" 2>/dev/null || true
-        ok "已写入环境: $rc"
-      fi
-    done
-  elif [ -f /root/.bashrc ] && ! grep -q 'XAI-Register (generated by install.sh)' /root/.bashrc 2>/dev/null; then
+    _rc_targets=("${REAL_HOME}/.bashrc" "${REAL_HOME}/.zshrc" "${REAL_HOME}/.profile")
+  else
+    _rc_targets=(/root/.bashrc /root/.zshrc)
+  fi
+  for rc in "${_rc_targets[@]}"; do
+    [ -d "$(dirname "$rc")" ] || continue
+    [ -f "$rc" ] || continue
+    if grep -q 'XAI-Register (generated by install.sh)' "$rc" 2>/dev/null; then
+      ok "已存在环境片段: $rc"
+      continue
+    fi
     {
       echo ""
       echo "# XAI-Register (generated by install.sh)"
-      echo "export XAI_HOME=\"${GROK_HOME_OPT}\""
-      echo "export XAI_PYTHON=\"${VENV_DIR}/bin/python\""
-      echo "export XAI_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
-      echo "export XAI_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
-          echo "export XAI_CASTLE_SCRIPT=\"${SHARE_DIR}/castle_mint.py\""
-      echo "export XAI_CLEARANCE_DIR=\"${INSTALL_DIR}/clearance\""
-      echo "export GROK_PYTHON=\"${VENV_DIR}/bin/python\""
-      echo "export GROK_TURNSTILE_SCRIPT=\"${SHARE_DIR}/turnstile_mint.py\""
-      echo "export GROK_TURNSTILE_POOL_SCRIPT=\"${SHARE_DIR}/turnstile_pool.py\""
-      echo "export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1"
-    } >>/root/.bashrc
-  fi
+      xai_env_lines
+      echo "export PATH=\"\$PATH:${BIN_DIR}\""
+    } >>"$rc"
+    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+      chown "${SUDO_USER}:$(id -gn "$SUDO_USER" 2>/dev/null || echo "$SUDO_USER")" "$rc" 2>/dev/null || true
+    fi
+    ok "已写入环境: $rc"
+  done
 
   print_done "$PROFILE_SNIPPET"
 }
@@ -1116,7 +1111,7 @@ install_darwin() {
   echo "=============================================="
   echo "  命令名:     $COMMAND_NAME"
   echo "  源码目录:   $INSTALL_DIR"
-  echo "  数据目录:   $GROK_HOME_OPT"
+  echo "  数据目录:   $XAI_HOME_OPT"
   echo "  二进制:     $BIN_DIR/$COMMAND_NAME"
   echo "  脚本共享:   $SHARE_DIR"
   echo "  Python venv:$VENV_DIR"
@@ -1152,7 +1147,7 @@ EOM
   # 或 https://www.docker.com/products/docker-desktop/
   open -a Docker
   docker info
-  curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | bash
 EOM
       exit 1
     fi
@@ -1202,22 +1197,9 @@ EOM
 
   local marker="# XAI-Register (generated by install.sh)"
   local block
-  block=$(cat <<EOF
-${marker}
-export PATH="\$PATH:${BIN_DIR}"
-export XAI_HOME="${GROK_HOME_OPT}"
-export XAI_PYTHON="${VENV_DIR}/bin/python"
-export XAI_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-export XAI_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-export XAI_CASTLE_SCRIPT="${SHARE_DIR}/castle_mint.py"
-export XAI_CLEARANCE_DIR="${INSTALL_DIR}/clearance"
-# 兼容本 fork 旧变量名（不覆盖原版 grok 的 GROK_HOME）
-export GROK_PYTHON="${VENV_DIR}/bin/python"
-export GROK_TURNSTILE_SCRIPT="${SHARE_DIR}/turnstile_mint.py"
-export GROK_TURNSTILE_POOL_SCRIPT="${SHARE_DIR}/turnstile_pool.py"
-export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
-EOF
-)
+  block="${marker}
+export PATH=\"\$PATH:${BIN_DIR}\"
+$(xai_env_lines)"
   local env_hint=""
   for rc in "${HOME}/.zprofile" "${HOME}/.zshrc" "${HOME}/.bash_profile"; do
     touch "$rc" 2>/dev/null || continue

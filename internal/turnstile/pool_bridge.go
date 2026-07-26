@@ -90,7 +90,7 @@ func (p *PoolBridge) ensureStarted(ctx context.Context) error {
 
 func (p *PoolBridge) start(ctx context.Context) error {
 	if p.ScriptPath == "" {
-		return fmt.Errorf("turnstile_pool.py not found; set GROK_TURNSTILE_POOL_SCRIPT or install scripts/")
+		return fmt.Errorf("turnstile_pool.py not found; install scripts/ or set XAI_TURNSTILE_POOL_SCRIPT")
 	}
 	if p.Python == "" {
 		return fmt.Errorf("python not found for turnstile pool")
@@ -318,11 +318,6 @@ func (p *PoolBridge) kill() error {
 
 func findPoolScript() string {
 	if p := strings.TrimSpace(os.Getenv("XAI_TURNSTILE_POOL_SCRIPT")); p != "" {
-		if fileExists(p) {
-			return p
-		}
-	}
-	if p := strings.TrimSpace(os.Getenv("GROK_TURNSTILE_POOL_SCRIPT")); p != "" {
 		if fileExists(p) {
 			return p
 		}

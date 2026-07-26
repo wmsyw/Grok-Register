@@ -54,4 +54,4 @@ test:
 
 run:
 	@if [ -z "$(GO)" ] || [ ! -x "$(GO)" ]; then echo "go not found"; exit 1; fi
-	$(GO) run ./cmd/xai help
+	$(GO) run ./cmd/grok help

@@ -10,7 +10,7 @@ xai start -t 10 --thread 2
 xai status
 xai logs -f
 xai stop
-xai config                # 编辑 ~/.grok/config.env
+xai config                # 编辑 ~/.xai/config.env
 xai upload                # 手动上传 CPA JSON 到 Management API
 ```
 
@@ -92,7 +92,7 @@ curl -fsSL .../install.sh | sudo NONINTERACTIVE=1 bash
 ### Linux 一行
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | sudo bash
 ```
 
 | 项 | 默认 |
@@ -118,16 +118,17 @@ curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scr
 然后（**不要 sudo**）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | bash
 ```
 
 | 项 | 默认 |
 |----|------|
 | 命令 | `~/.local/bin/xai` |
-| 源码 | `~/Grok-Register` |
-| 数据 | `~/.grok` |
-| Python | `~/.local/share/cloakbrowser-venv/bin/python` |
-| mint | `~/.local/share/grok-reg/turnstile_{mint,pool}.py` |
+| 源码 | `~/XAI-Register` |
+| 数据 | `~/.xai` |
+| Python | `~/.local/share/xai-cloakbrowser-venv/bin/python` |
+| mint | `~/.local/share/xai-reg/turnstile_{mint,pool}.py` |
+| Chromium | `~/.local/share/xai-reg/cloakbrowser` |
 | 环境 | 写入 `~/.zprofile` / `~/.zshrc` |
 
 缺 brew 或 Docker 时脚本会打印安装命令并退出，装好后重跑同一行即可。
@@ -140,7 +141,7 @@ curl -fsSL .../install.sh | sudo bash -s -- --command grok-reg
 
 # Linux：自定义目录
 curl -fsSL .../install.sh | sudo bash -s -- \
-  --install-dir /data/Grok-Register --home /data/grok-data
+  --install-dir /data/XAI-Register --home /data/xai-data
 
 # macOS：改命令名 / 把二进制装到 brew 前缀
 curl -fsSL .../install.sh | bash -s -- --command grok-reg
@@ -151,12 +152,12 @@ curl -fsSL .../install.sh | bash -s -- --bin-dir "$(brew --prefix)/bin"
 
 | 选项 / 环境变量 | Linux 默认 | macOS 默认 | 说明 |
 |-----------------|------------|------------|------|
-| `--command` | `grok` | 同左 | CLI 命令名 |
-| `--install-dir` | `/opt/Grok-Register` | `~/Grok-Register` | 源码 |
-| `--home` | `/root/.grok` | `~/.grok` | 数据 |
+| `--command` | `xai` | 同左 | CLI 命令名 |
+| `--install-dir` | `/opt/XAI-Register` | `~/XAI-Register` | 源码 |
+| `--home` | `/root/.xai`（sudo 时 `~SUDO_USER/.xai`） | `~/.xai` | 数据（`XAI_HOME`） |
 | `--bin-dir` | `/usr/local/bin` | `~/.local/bin` | 二进制 |
-| `--share-dir` | `/usr/local/share/grok-reg` | `~/.local/share/grok-reg` | mint 脚本 |
-| `--venv-dir` | `/opt/cloakbrowser-venv` | `~/.local/share/cloakbrowser-venv` | Python venv |
+| `--share-dir` | `/usr/local/share/xai-reg` | `~/.local/share/xai-reg` | mint 脚本 |
+| `--venv-dir` | `/opt/xai-cloakbrowser-venv` | `~/.local/share/xai-cloakbrowser-venv` | Python venv |
 | `--skip-docker` | off | off | 不检查/不装 Docker |
 | `--skip-clearance` | off | off | 不起清障 |
 | `--skip-browser` | off | off | 不装 Playwright |
@@ -167,25 +168,25 @@ curl -fsSL .../install.sh | bash -s -- --bin-dir "$(brew --prefix)/bin"
 
 ```bash
 # Linux
-sudo bash scripts/install.sh --command grok-reg
+sudo bash scripts/install.sh --command xai
 # macOS
-bash scripts/install.sh --command grok-reg
+bash scripts/install.sh --command xai
 # 或仅装二进制
 make build && sudo make install          # Linux
-make build && make install PREFIX="$HOME/.local" APP=grok
+make build && make install PREFIX="$HOME/.local" APP=xai
 ```
 
 ### 装完立刻跑
 
 ```bash
 # Linux
-export GROK_HOME=/root/.grok
-export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
+export XAI_HOME=/root/.xai
+export XAI_PYTHON=/opt/xai-cloakbrowser-venv/bin/python
 
 # macOS（或新开终端，已写进 zprofile）
 export PATH="$PATH:$HOME/.local/bin"
-export GROK_HOME="$HOME/.grok"
-export GROK_PYTHON="$HOME/.local/share/cloakbrowser-venv/bin/python"
+export XAI_HOME="$HOME/.xai"
+export XAI_PYTHON="$HOME/.local/share/xai-cloakbrowser-venv/bin/python"
 
 xai start
 xai status
@@ -196,9 +197,9 @@ clearance：
 
 ```bash
 # Linux
-cd /opt/Grok-Register/clearance && docker compose up -d && docker compose ps
+cd /opt/XAI-Register/clearance && docker compose up -d && docker compose ps
 # macOS
-cd ~/Grok-Register/clearance && docker compose up -d && docker compose ps
+cd ~/XAI-Register/clearance && docker compose up -d && docker compose ps
 ```
 
 ---
@@ -285,8 +286,8 @@ docker compose version || sudo apt install -y docker-compose-plugin
 ```bash
 sudo mkdir -p /opt
 cd /opt
-sudo git clone https://github.com/Charles-0509/Grok-Register.git
-cd /opt/Grok-Register
+sudo git clone https://github.com/wmsyw/Grok-Register.git XAI-Register
+cd /opt/XAI-Register
 
 export PATH=$PATH:/usr/local/go/bin
 make build
@@ -302,22 +303,30 @@ xai help
 ### 4. 无头浏览器：Playwright + CloakBrowser（**必做**）
 
 ```bash
-sudo python3 -m venv /opt/cloakbrowser-venv
-sudo /opt/cloakbrowser-venv/bin/pip install -U pip
-sudo /opt/cloakbrowser-venv/bin/pip install -r /opt/Grok-Register/scripts/requirements-turnstile.txt
-sudo /opt/cloakbrowser-venv/bin/python -m cloakbrowser install
+sudo python3 -m venv /opt/xai-cloakbrowser-venv
+sudo /opt/xai-cloakbrowser-venv/bin/pip install -U pip
+sudo /opt/xai-cloakbrowser-venv/bin/pip install -r /opt/XAI-Register/scripts/requirements-turnstile.txt
+# Chromium 缓存放本 fork 自己的目录：默认 ~/.cloakbrowser 与原版 grok 共用，
+# 而 cloakbrowser 解包前会 rmtree 目标目录，两边版本不同会互删。
+sudo mkdir -p /usr/local/share/xai-reg/cloakbrowser
+sudo CLOAKBROWSER_CACHE_DIR=/usr/local/share/xai-reg/cloakbrowser \
+  /opt/xai-cloakbrowser-venv/bin/python -m cloakbrowser install
 
-echo 'export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python' | sudo tee -a /root/.bashrc
-echo 'export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1' | sudo tee -a /root/.bashrc
-export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
+sudo tee -a /root/.bashrc >/dev/null <<'EOF'
+export XAI_PYTHON=/opt/xai-cloakbrowser-venv/bin/python
+export CLOAKBROWSER_CACHE_DIR=/usr/local/share/xai-reg/cloakbrowser
+export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
+EOF
+export XAI_PYTHON=/opt/xai-cloakbrowser-venv/bin/python
+export CLOAKBROWSER_CACHE_DIR=/usr/local/share/xai-reg/cloakbrowser
 export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
 ```
 
 **冒烟测试**（清障栈起来后）：
 
 ```bash
-export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
-$GROK_PYTHON /usr/local/share/grok-reg/turnstile_mint.py \
+export XAI_PYTHON=/opt/xai-cloakbrowser-venv/bin/python
+$XAI_PYTHON /usr/local/share/xai-reg/turnstile_mint.py \
   --site-key 0x4AAAAAAAhr9JGVDZbrZOo0 \
   --url https://accounts.x.ai/sign-up \
   --proxy http://127.0.0.1:41080 \
@@ -328,7 +337,7 @@ echo exit:$?
 ### 5. 清障栈
 
 ```bash
-cd /opt/Grok-Register/clearance
+cd /opt/XAI-Register/clearance
 sudo docker compose up -d
 sudo docker compose ps
 ```
@@ -339,12 +348,12 @@ sudo docker compose ps
 | `127.0.0.1:41080` | Privoxy HTTP |
 | `127.0.0.1:8291` | FlareSolverr |
 
-### 6. 配置 `~/.grok/config.env`
+### 6. 配置 `~/.xai/config.env`
 
 ```bash
-sudo mkdir -p /root/.grok
+sudo mkdir -p /root/.xai
 # 也可：xai config（首次会生成 example + 可编辑）
-sudo tee /root/.grok/config.env >/dev/null <<'EOF'
+sudo tee /root/.xai/config.env >/dev/null <<'EOF'
 EMAIL_MODE=tempmail
 
 CLEARANCE_ENABLED=1
@@ -410,7 +419,8 @@ EMAIL_MODE=tempmail
 ### 7. 启动与运维
 
 ```bash
-export GROK_PYTHON=/opt/cloakbrowser-venv/bin/python
+export XAI_PYTHON=/opt/xai-cloakbrowser-venv/bin/python
+export CLOAKBROWSER_CACHE_DIR=/usr/local/share/xai-reg/cloakbrowser
 export CLOAKBROWSER_SUPPRESS_FONT_WARNING=1
 
 xai start
@@ -422,10 +432,10 @@ xai config
 xai upload
 ```
 
-**数据目录**（`GROK_HOME`，默认 `~/.grok`）：
+**数据目录**（`XAI_HOME`，默认 `~/.xai`）：
 
 ```text
-~/.grok/
+~/.xai/
 ├── config.env / config.env.example
 ├── run.pid / run.lock / state.json
 ├── logs/run-yyyymmdd-HHMMSS.log
@@ -440,10 +450,10 @@ xai upload
 
 ```bash
 # 推荐：重跑一键（保留 config.env，自动补齐新键）
-curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | sudo bash
 
 # 或手动
-cd /opt/Grok-Register   # mac: ~/Grok-Register
+cd /opt/XAI-Register   # mac: ~/XAI-Register
 sudo git pull
 export PATH=$PATH:/usr/local/go/bin
 make build && sudo make install   # mac: make install PREFIX=$HOME/.local
@@ -455,7 +465,7 @@ sudo apt-get install -y xvfb
 
 - **推荐一键**：先装 Homebrew + Docker Desktop，再 `curl .../install.sh | bash`（见上文）  
 - 手动：`brew install go python`，venv + CloakBrowser，`make build && make install PREFIX=$HOME/.local`  
-- 清障：打开 Docker Desktop 后 `cd ~/Grok-Register/clearance && docker compose up -d`
+- 清障：打开 Docker Desktop 后 `cd ~/XAI-Register/clearance && docker compose up -d`
 
 ### Windows / Docker Desktop（推荐路径）
 
@@ -491,7 +501,7 @@ docker exec -it grok-reg xai stop
 
 **一次性前台跑一批（跑完即停、不残留）**：
 ```powershell
-docker compose run --rm -e GROK_TARGET=20 grok run
+docker compose run --rm -e XAI_TARGET=20 grok run
 ```
 
 **冒烟测试**（确认 CloakBrowser 在容器里能拿 token）：
@@ -513,7 +523,7 @@ echo exit:$?
 | `FLARESOLVERR_URL` | `http://127.0.0.1:8291` | `http://flaresolverr:8191` |
 | `CLEARANCE_PROXY` | `http://privoxy:8118` | `http://privoxy:8118` |
 | Chrome 路径 | `~/.cloakbrowser/...` | `/root/.cloakbrowser/...`（容器内 root） |
-| `GROK_HOME` | `~/.grok` | `/data`（=`host ./data`） |
+| `XAI_HOME` | `~/.xai` | `/data`（=`host ./data`） |
 | `CPA_MANAGEMENT_BASE` | `http://127.0.0.1:8317/...` | `http://host.docker.internal:8317/...` |
 
 `docker/grok-config.env` 已写好上述约定，默认即用；如要改自覆写 `data/config.env`。
@@ -552,15 +562,18 @@ Remove-Item -Recurse bin/,, data/ -ErrorAction SilentlyContinue   # 连本地输
 
 | 变量 | 说明 |
 |------|------|
-| `GROK_HOME` | 数据根，默认 `~/.grok` |
-| `GROK_PYTHON` | mint/pool 用的 Python |
-| `GROK_TURNSTILE_SCRIPT` | one-shot mint 路径 |
-| `GROK_TURNSTILE_POOL_SCRIPT` | 常驻池路径 |
+| `XAI_HOME` | 数据根，默认 `~/.xai`（**不再读 `GROK_HOME`**，避免与原版 grok 串目录） |
+| `XAI_PYTHON` | mint/pool 用的 Python |
+| `XAI_TURNSTILE_SCRIPT` | one-shot mint 路径 |
+| `XAI_TURNSTILE_POOL_SCRIPT` | 常驻池路径 |
+| `XAI_CASTLE_SCRIPT` | Castle mint 路径 |
+| `XAI_CLEARANCE_DIR` | clearance compose 目录 |
 | `CHROME_PATH` | 强制 Chromium |
+| `CLOAKBROWSER_CACHE_DIR` | Chromium 缓存根；默认 `~/.cloakbrowser` 与原版共用，一键安装会指到 `<share-dir>/cloakbrowser` |
 | `CLOAKBROWSER_SUPPRESS_FONT_WARNING` | 抑制 Linux 字体提示 |
 | `EDITOR` | `xai config` 编辑器 |
 
-完整模板：`~/.grok/config.env.example`（每次 start/config 同步）。
+完整模板：`~/.xai/config.env.example`（每次 start/config 同步）。
 
 ---
 
@@ -607,7 +620,7 @@ TURNSTILE_PROVIDER=browser
 TURNSTILE_MODE=offscreen   # offscreen | headless | auto
 ```
 
-默认**不**注入 FlareSolverr cookie/UA（除非 `GROK_TURNSTILE_INJECT_CLEARANCE=1`）。
+默认**不**注入 FlareSolverr cookie/UA（除非 `XAI_TURNSTILE_INJECT_CLEARANCE=1`）。
 
 可选 lite farm：
 
@@ -680,7 +693,7 @@ make build && sudo make install
 
 **`turnstile timeout` / `iframes=0`**
 
-1. `GROK_PYTHON` 指向已装 playwright 的 venv  
+1. `XAI_PYTHON` 指向已装 playwright 的 venv  
 2. `python -m cloakbrowser install` 已完成  
 3. clearance healthy，`REGISTER_PROXY` 可用  
 
@@ -724,16 +737,16 @@ sudo apt-get update -y
 sudo apt-get install -y xvfb
 
 # 2) 更新源码 + 重装 CLI（推荐重跑一键，会保留 config 并补齐新键）
-curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | sudo bash
 
 # 或手动:
-#   cd /opt/Grok-Register && sudo git pull
+#   cd /opt/XAI-Register && sudo git pull
 #   export PATH=$PATH:/usr/local/go/bin
 #   make build && sudo make install
 
-# 3) 若未跑一键 merge，手工补 config（路径按你的 GROK_HOME）
-CFG="${GROK_HOME:-$HOME/.grok}/config.env"
-# root 安装时常是 /home/<用户>/.grok
+# 3) 若未跑一键 merge，手工补 config（路径按你的 XAI_HOME）
+CFG="${XAI_HOME:-$HOME/.xai}/config.env"
+# root 安装时常是 /home/<用户>/.xai
 grep -q '^CLEARANCE_MODE=' "$CFG" 2>/dev/null || echo 'CLEARANCE_MODE=auto' >>"$CFG"
 grep -q '^CLEARANCE_AUTO_STOP=' "$CFG" 2>/dev/null || echo 'CLEARANCE_AUTO_STOP=1' >>"$CFG"
 grep -q '^CF_IMPERSONATE=' "$CFG" 2>/dev/null || echo 'CF_IMPERSONATE=chrome_131' >>"$CFG"
@@ -744,7 +757,7 @@ grep -q '^OAUTH_RETRY_SEC=' "$CFG" 2>/dev/null || echo 'OAUTH_RETRY_SEC=60' >>"$
 grep -q '^PROBE_WARMUP_SEC=' "$CFG" 2>/dev/null || echo 'PROBE_WARMUP_SEC=5' >>"$CFG"
 
 # 4) 验证
-which grok; xai help
+which xai; xai help
 command -v xvfb-run && xvfb-run -a echo xvfb_ok
 ```
 
@@ -755,11 +768,11 @@ command -v xvfb-run && xvfb-run -a echo xvfb_ok
 brew install go python 2>/dev/null || true
 
 # 2) 一键或手动
-curl -fsSL https://raw.githubusercontent.com/Charles-0509/Grok-Register/main/scripts/install.sh | bash
-# 或: cd ~/Grok-Register && git pull && make build && make install PREFIX=$HOME/.local
+curl -fsSL https://raw.githubusercontent.com/wmsyw/Grok-Register/main/scripts/install.sh | bash
+# 或: cd ~/XAI-Register && git pull && make build && make install PREFIX=$HOME/.local
 
-# 3) 补 config（同 Linux，CFG=~/.grok/config.env）
-CFG="${GROK_HOME:-$HOME/.grok}/config.env"
+# 3) 补 config（同 Linux，CFG=~/.xai/config.env）
+CFG="${XAI_HOME:-$HOME/.xai}/config.env"
 grep -q '^OAUTH_MIN_INTERVAL_SEC=' "$CFG" 2>/dev/null || echo 'OAUTH_MIN_INTERVAL_SEC=6' >>"$CFG"
 grep -q '^OAUTH_RETRY_SEC=' "$CFG" 2>/dev/null || echo 'OAUTH_RETRY_SEC=60' >>"$CFG"
 grep -q '^PROBE_WARMUP_SEC=' "$CFG" 2>/dev/null || echo 'PROBE_WARMUP_SEC=5' >>"$CFG"

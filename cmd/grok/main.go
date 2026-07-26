@@ -116,7 +116,7 @@ func printHelp() {
   reoauth:        优先 refresh_token；否则 SSO device（CreateSession 回退）；配置了 CPA 上传则自动入库
   升级后请查看 ~/.xai/config.env.example 了解新增配置项
 
-数据目录: ~/.xai/ (可用 XAI_HOME 覆盖；兼容 GROK_HOME)
+数据目录: ~/.xai/ (可用 XAI_HOME 覆盖；与原版 grok 的 ~/.grok 完全隔离)
   输出:     ~/.xai/outputs/<yyyymmdd-HHMMSS>/{SSO,CPA,SUB,grok2api}/
             CPA/*.json + SUB/*.json = OAuth access/refresh；grok2api/tokens.txt = SSO
   xai stop 在 CLEARANCE_AUTO_STOP=1 时会同时 docker compose stop 清障栈

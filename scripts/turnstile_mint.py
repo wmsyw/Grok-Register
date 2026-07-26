@@ -20,18 +20,31 @@ import sys
 import time
 
 
+def cloak_cache_dirs() -> list[str]:
+    """Chromium cache roots, most-specific first.
+
+    CLOAKBROWSER_CACHE_DIR wins: a side-by-side install points it at its own
+    directory so it never picks up (or races) another install's ~/.cloakbrowser.
+    """
+    bases: list[str] = []
+    env = (os.environ.get("CLOAKBROWSER_CACHE_DIR") or "").strip()
+    if env:
+        bases.append(env)
+        return bases
+    h = os.path.expanduser("~")
+    if h:
+        bases.append(os.path.join(h, ".cloakbrowser"))
+    for home in ("/root", "/home/charles"):
+        bases.append(os.path.join(home, ".cloakbrowser"))
+    return bases
+
+
 def find_chrome() -> str:
     env = (os.environ.get("CHROME_PATH") or "").strip()
     if env and os.path.exists(env):
         return env
-    homes = []
-    h = os.path.expanduser("~")
-    if h:
-        homes.append(h)
-    homes.extend(["/root", "/home/charles"])
     matches: list[str] = []
-    for home in homes:
-        base = os.path.join(home, ".cloakbrowser")
+    for base in cloak_cache_dirs():
         matches.extend(glob.glob(os.path.join(base, "chromium-*/chrome")))
         matches.extend(
             glob.glob(

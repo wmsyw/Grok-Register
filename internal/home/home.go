@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	// EnvHome is the preferred data-dir override for this fork (isolated from upstream grok).
+	// EnvHome is the data-dir override for this fork.
+	// Deliberately NOT GROK_HOME: upstream's installer exports GROK_HOME=~/.grok
+	// system-wide, so honouring it would silently point this fork at upstream data.
 	EnvHome = "XAI_HOME"
-	// EnvHomeLegacy is accepted for compatibility with older env snippets.
-	EnvHomeLegacy = "GROK_HOME"
 	// DirName is the default directory under $HOME when no env override is set.
 	// Intentionally NOT ".grok" so a side-by-side install cannot clobber upstream data.
 	DirName = ".xai"
@@ -32,9 +32,6 @@ type Paths struct {
 
 func Resolve() (Paths, error) {
 	root := strings.TrimSpace(os.Getenv(EnvHome))
-	if root == "" {
-		root = strings.TrimSpace(os.Getenv(EnvHomeLegacy))
-	}
 	if root == "" {
 		h, err := os.UserHomeDir()
 		if err != nil {

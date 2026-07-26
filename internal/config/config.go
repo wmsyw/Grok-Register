@@ -68,7 +68,7 @@ type Config struct {
 	ClearanceMode string
 	// ClearanceAutoStop: after run ends or is interrupted, docker compose stop clearance stack.
 	ClearanceAutoStop bool
-	// ClearanceComposeDir optional override (else GROK_CLEARANCE_DIR / discover).
+	// ClearanceComposeDir optional override (else XAI_CLEARANCE_DIR / discover).
 	ClearanceComposeDir string
 	RegisterProxy       string
 	FlareSolverrURL     string

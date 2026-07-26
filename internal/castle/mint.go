@@ -54,7 +54,7 @@ func MintFull(ctx context.Context, opt Options) (Result, error) {
 	}
 	py := strings.TrimSpace(opt.Python)
 	if py == "" {
-		py = firstEnv("XAI_PYTHON", "GROK_PYTHON")
+		py = strings.TrimSpace(os.Getenv("XAI_PYTHON"))
 	}
 	if py == "" {
 		py = "python3"
@@ -134,7 +134,7 @@ func parseCookiesLine(stderr string) string {
 }
 
 func detectScript() string {
-	if p := firstEnv("XAI_CASTLE_SCRIPT", "GROK_CASTLE_SCRIPT"); p != "" {
+	if p := strings.TrimSpace(os.Getenv("XAI_CASTLE_SCRIPT")); p != "" {
 		if fileExists(p) {
 			return p
 		}
