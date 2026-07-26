@@ -375,6 +375,38 @@ func authorizedBody(body string) bool {
 		strings.Contains(low, "device is authorized")
 }
 
+// buildApprovalForm is field-driven so localized Continue/Allow button labels do not matter.
+// The page may provide an empty or stale action; authorization must always submit allow.
+func buildApprovalForm(sso, userCode string, fields url.Values, html string) url.Values {
+	form := url.Values{
+		"user_code":      {userCode},
+		"action":         {"allow"},
+		"principal_type": {"User"},
+		"principal_id":   {""},
+	}
+	if pid := principalFromSSO(sso); pid != "" {
+		form.Set("principal_id", pid)
+	}
+	for key, values := range fields {
+		switch key {
+		case "action", "user_code", "principal_type":
+			continue
+		}
+		if len(values) > 0 && values[0] != "" {
+			form.Set(key, values[0])
+		}
+	}
+	form.Set("user_code", userCode)
+	form.Set("principal_type", "User")
+	form.Set("action", "allow")
+	if form.Get("principal_id") == "" {
+		if pid := principalFromConsentHTML(html); pid != "" {
+			form.Set("principal_id", pid)
+		}
+	}
+	return form
+}
+
 // ConfirmHTTP posts verify + approve with SSO cookie (no browser).
 // Success only when device is actually marked authorized (done path / body text).
 // Accepting arbitrary redirects was causing token poll invalid_grant (Access denied).
@@ -444,41 +476,12 @@ func (c *Client) ConfirmHTTP(ctx context.Context, sso string, flow DeviceFlow) e
 	// Diagnostic context for operators (short).
 	_ = fmt.Sprintf("verify status=%d loc=%s", resp.StatusCode, trimLoc(loc))
 
-	// Minimal form matching historical working Python client (empty principal_id OK).
-	// Then overlay non-empty fields from consent HTML (csrf / principal_id).
-	aform := url.Values{
-		"user_code":      {flow.UserCode},
-		"action":         {"allow"},
-		"principal_type": {"User"},
-		"principal_id":   {""},
-	}
-	if pid := principalFromSSO(sso); pid != "" {
-		aform.Set("principal_id", pid)
-	}
-	if fields, html, htmlCookie := c.loadConsentForm(ctx, consentRef, cookie); len(fields) > 0 || html != "" {
+	// Submit the form fields directly instead of depending on localized button text.
+	fields, html, htmlCookie := c.loadConsentForm(ctx, consentRef, cookie)
+	if len(fields) > 0 || html != "" {
 		cookie = htmlCookie
-		for k, vs := range fields {
-			if k == "action" {
-				continue // never take empty/deny from page
-			}
-			if len(vs) > 0 && vs[0] != "" {
-				aform.Set(k, vs[0])
-			}
-		}
-		aform.Set("action", "allow")
-		if aform.Get("user_code") == "" {
-			aform.Set("user_code", flow.UserCode)
-		}
-		if aform.Get("principal_type") == "" {
-			aform.Set("principal_type", "User")
-		}
-		// Consent form often leaves principal_id empty; page RSC embeds userId.
-		if aform.Get("principal_id") == "" {
-			if pid := principalFromConsentHTML(html); pid != "" {
-				aform.Set("principal_id", pid)
-			}
-		}
 	}
+	aform := buildApprovalForm(sso, flow.UserCode, fields, html)
 
 	// Try approve; if incomplete, one more attempt with only core fields (no HTML overlay).
 	for attempt, form := range []url.Values{aform, {

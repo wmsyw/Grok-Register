@@ -1,6 +1,7 @@
 package cpa
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"mime"
@@ -10,16 +11,17 @@ import (
 
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNormalizeManagementBase(t *testing.T) {
 	cases := map[string]string{
-		"http://cli-proxy-api:8317":                    "http://127.0.0.1:8317/v0/management",
-		"http://cli-proxy-api:8317/":                   "http://127.0.0.1:8317/v0/management",
-		"http://cli-proxy-api:8317/v0/management":      "http://127.0.0.1:8317/v0/management",
-		"http://127.0.0.1:8317":                        "http://127.0.0.1:8317/v0/management",
-		"http://127.0.0.1:8317/v0/management":          "http://127.0.0.1:8317/v0/management",
-		"http://localhost:8317/v0/management":          "http://localhost:8317/v0/management",
+		"http://cli-proxy-api:8317":               "http://127.0.0.1:8317/v0/management",
+		"http://cli-proxy-api:8317/":              "http://127.0.0.1:8317/v0/management",
+		"http://cli-proxy-api:8317/v0/management": "http://127.0.0.1:8317/v0/management",
+		"http://127.0.0.1:8317":                   "http://127.0.0.1:8317/v0/management",
+		"http://127.0.0.1:8317/v0/management":     "http://127.0.0.1:8317/v0/management",
+		"http://localhost:8317/v0/management":     "http://localhost:8317/v0/management",
 	}
 	for in, want := range cases {
 		got := NormalizeManagementBase(in)
@@ -185,5 +187,160 @@ func TestUploadEmptyKeySkips(t *testing.T) {
 	}
 	if len(logs) == 0 {
 		t.Fatal("expected warning log")
+	}
+}
+
+func TestStartXAIAuth(t *testing.T) {
+	var gotAuth, gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/management/xai-auth-url" || r.URL.Query().Get("is_webui") != "true" {
+			http.NotFound(w, r)
+			return
+		}
+		gotAuth = r.Header.Get("Authorization")
+		gotKey = r.Header.Get("X-Management-Key")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":     "ok",
+			"url":        "https://auth.x.ai/oauth2/device?user_code=ABCD-EFGH",
+			"state":      "xai-123",
+			"flow":       "device",
+			"user_code":  "ABCD-EFGH",
+			"expires_in": 600,
+		})
+	}))
+	defer srv.Close()
+
+	u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "secret", TimeoutSec: 2}, nil)
+	session, err := u.StartXAIAuth(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.State != "xai-123" || session.UserCode != "ABCD-EFGH" || session.ExpiresIn != 600 {
+		t.Fatalf("unexpected session: %+v", session)
+	}
+	if gotAuth != "Bearer secret" || gotKey != "secret" {
+		t.Fatalf("management auth headers missing: authorization=%q x-key=%q", gotAuth, gotKey)
+	}
+}
+
+func TestStartXAIAuthRejectsInvalidResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]any
+		want    string
+	}{
+		{
+			name: "untrusted URL",
+			payload: map[string]any{
+				"url": "https://example.com/device?user_code=ABC", "state": "xai-1", "flow": "device",
+			},
+			want: "untrusted verification host",
+		},
+		{
+			name: "missing state",
+			payload: map[string]any{
+				"url": "https://auth.x.ai/device?user_code=ABC", "flow": "device",
+			},
+			want: "missing state",
+		},
+		{
+			name: "missing user code",
+			payload: map[string]any{
+				"url": "https://auth.x.ai/device", "state": "xai-1", "flow": "device",
+			},
+			want: "missing user_code",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(tt.payload)
+			}))
+			defer srv.Close()
+			u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "k", TimeoutSec: 2}, nil)
+			_, err := u.StartXAIAuth(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err=%v want substring %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestPollXAIAuthStatusPendingThenSuccess(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v0/management/get-auth-status" || r.URL.Query().Get("state") != "xai-123" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer k" || r.Header.Get("X-Management-Key") != "k" {
+			http.Error(w, "missing auth", http.StatusUnauthorized)
+			return
+		}
+		requests++
+		status := "wait"
+		if requests >= 2 {
+			status = "ok"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": status})
+	}))
+	defer srv.Close()
+
+	u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "k", TimeoutSec: 2}, nil)
+	if err := u.pollXAIAuthStatus(context.Background(), "xai-123", 200*time.Millisecond, time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests=%d want 2", requests)
+	}
+}
+
+func TestPollXAIAuthStatusTerminalError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "access denied"})
+	}))
+	defer srv.Close()
+	u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "k", TimeoutSec: 2}, nil)
+	err := u.pollXAIAuthStatus(context.Background(), "xai-1", time.Second, time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestPollXAIAuthStatusTimeoutAndCancel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "wait"})
+	}))
+	defer srv.Close()
+	u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "k", TimeoutSec: 2}, nil)
+
+	err := u.pollXAIAuthStatus(context.Background(), "xai-1", 10*time.Millisecond, time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Fatalf("timeout err=%v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = u.pollXAIAuthStatus(ctx, "xai-1", time.Second, time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), context.Canceled.Error()) {
+		t.Fatalf("cancel err=%v", err)
+	}
+}
+
+func TestPollXAIAuthStatusStopsAfterRepeatedHTTPError(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	u := NewUploader(UploadConfig{Enabled: true, BaseURL: srv.URL, Key: "k", TimeoutSec: 2}, nil)
+
+	err := u.pollXAIAuthStatus(context.Background(), "xai-1", time.Second, time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "status=503") {
+		t.Fatalf("err=%v", err)
+	}
+	if requests != xaiAuthMaxPollErrors {
+		t.Fatalf("requests=%d want %d", requests, xaiAuthMaxPollErrors)
 	}
 }

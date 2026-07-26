@@ -74,11 +74,10 @@ type Engine struct {
 	oauthGateMu    sync.Mutex
 	oauthLastStart time.Time
 
-	start    time.Time
-	wgReg    sync.WaitGroup // S/P/C
-	wgOAuth  sync.WaitGroup
-	wgAux    sync.WaitGroup // status ticker etc
-	wgUpload sync.WaitGroup // async CPA management uploads
+	start   time.Time
+	wgReg   sync.WaitGroup // S/P/C
+	wgOAuth sync.WaitGroup
+	wgAux   sync.WaitGroup // status ticker etc
 }
 
 // remainingCapacity = target - done - reserved (how many new accounts may start).
@@ -372,7 +371,7 @@ func (e *Engine) run(ctx context.Context) error {
 		log.Infof(f, a...)
 	})
 	if e.uploader.Enabled() {
-		log.Infof("CPA upload enabled base=%s", cfg.CPAManagementBase)
+		log.Infof("CPA device enrollment enabled base=%s", cfg.CPAManagementBase)
 	}
 	e.oauth, err = oauth.NewClient(cfg.RegisterProxy, e.cm, time.Duration(cfg.OAuthRetrySec)*time.Second)
 	if err != nil {
@@ -527,31 +526,10 @@ shutdown:
 	// 1) stop S/P/C producers (ctx canceled)
 	// 2) wait register workers so no more sends to oauthCh
 	// 3) close oauthCh so OAuth workers exit range
-	// 4) wait CPA management uploads (async; used to be killed on exit)
+	// 4) CPA device enrollment is synchronous inside each OAuth worker
 	waitGroupTimeout(&e.wgReg, 15*time.Second, log, "register workers")
 	close(e.oauthCh)
 	waitGroupTimeout(&e.wgOAuth, 30*time.Second, log, "oauth workers")
-	uploadWait := 90 * time.Second
-	if cfg.CPAUploadEnabled {
-		// timeout * (retries+1) + verify + margin
-		to := cfg.CPAUploadTimeoutSec
-		if to <= 0 {
-			to = 30
-		}
-		retries := cfg.CPAUploadRetries
-		if retries < 0 {
-			retries = 0
-		}
-		uploadWait = time.Duration(to*(retries+1)+30) * time.Second
-		if uploadWait < 60*time.Second {
-			uploadWait = 60 * time.Second
-		}
-		if uploadWait > 5*time.Minute {
-			uploadWait = 5 * time.Minute
-		}
-		log.Infof("[cpa] 等待 Management 上传完成（最多 %s）…", uploadWait)
-	}
-	waitGroupTimeout(&e.wgUpload, uploadWait, log, "cpa upload")
 	waitGroupTimeout(&e.wgAux, 3*time.Second, log, "aux")
 
 	_ = st.Set(func(s *state.Snapshot) {
@@ -923,6 +901,27 @@ func (e *Engine) waitOAuthSlot(ctx context.Context) error {
 	}
 }
 
+func (e *Engine) enrollCPA(ctx context.Context, email, sso string) error {
+	session, err := e.uploader.StartXAIAuth(ctx)
+	if err != nil {
+		return err
+	}
+	e.opt.Log.Infof("[cpa] device 授权 %s code=%s", email, session.UserCode)
+	flow := oauth.DeviceFlow{
+		UserCode:        session.UserCode,
+		VerificationURL: session.URL,
+		ExpiresIn:       session.ExpiresIn,
+	}
+	if err := e.oauth.ConfirmHTTP(ctx, sso, flow); err != nil {
+		return fmt.Errorf("authorize CPA xAI device: %w", err)
+	}
+	if err := e.uploader.WaitXAIAuth(ctx, session); err != nil {
+		return err
+	}
+	e.opt.Log.OKf("[cpa] 已入库 %s", email)
+	return nil
+}
+
 func (e *Engine) oauthWorker(ctx context.Context, id int) {
 	defer e.wgOAuth.Done()
 	log := e.opt.Log
@@ -1022,6 +1021,19 @@ func (e *Engine) oauthWorker(ctx context.Context, id int) {
 				continue
 			}
 		}
+		if e.uploader != nil && e.uploader.Enabled() {
+			_ = e.opt.Store.Set(func(s *state.Snapshot) {
+				s.Phase = state.PhaseOAuth
+				s.PhaseDetail = fmt.Sprintf("CPA device 入库 %s", job.Email)
+			})
+			if err := e.enrollCPA(ctx, job.Email, ssoUsed); err != nil {
+				log.Warnf("[cpa] device 入库失败 %s: %v", job.Email, err)
+				_, _ = cpa.WriteAtomic(e.opt.Run.Discarded, doc, cpa.DefaultSecret())
+				e.fail.Add(1)
+				e.releaseReserve()
+				continue
+			}
+		}
 		// Atomic complete: prevents multi-OAuth overshoot of -t.
 		d, ok := e.tryComplete()
 		if !ok {
@@ -1051,26 +1063,6 @@ func (e *Engine) oauthWorker(ctx context.Context, id int) {
 			} else {
 				log.Debugf("Grok2API auth %s", filepath.Base(gPath))
 			}
-		}
-		if e.uploader != nil && e.uploader.Enabled() {
-			up := e.uploader
-			docCopy := doc
-			e.wgUpload.Add(1)
-			go func() {
-				defer e.wgUpload.Done()
-				defer func() { _ = recover() }()
-				log.Infof("[cpa] 开始上传 %s …", docCopy.Email)
-				res := up.UploadDocument(docCopy)
-				if res.Err != nil {
-					log.Warnf("[cpa] 上传失败 %s: %v", docCopy.Email, res.Err)
-				} else if !res.OK {
-					log.Warnf("[cpa] 上传失败 %s status=%d body=%s", docCopy.Email, res.Status, truncateRunes(res.Body, 180))
-				} else if res.Verified {
-					log.OKf("[cpa] 已入库 %s → %s", docCopy.Email, res.Name)
-				} else {
-					log.OKf("[cpa] 已上传 %s → %s（列表校验未命中，可能仍成功）", docCopy.Email, res.Name)
-				}
-			}()
 		}
 		log.OKf("CPA 就绪 #%d/%d %s -> %s", d, e.opt.Target, job.Email, filepath.Base(path))
 		e.refreshState()

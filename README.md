@@ -26,7 +26,7 @@ xai upload                # 手动上传 CPA JSON 到 Management API
 | **testmail** | `EMAIL_MODE=testmail`，GitHub Student Pack 等 |
 | **cf_temp_email** | 对接 [cloudflare_temp_email](https://github.com/dreamhunter2333/cloudflare_temp_email) 自建 Worker |
 | **全局座位上限** | `done + reserved ≤ target` |
-| **CPA 上传 wait** | 结束前等待 Management 上传，避免进程先退出 |
+| **CPA device 入库** | Management 创建 device flow，SSO 授权后轮询到 `ok` 才计完成 |
 | **一键安装** | 路径/命令名/WARP/结束停容器交互；安全同步（不再误删非空目录） |
 | **`xai stop` 停清障** | `CLEARANCE_AUTO_STOP=1` 时手动 stop 也会 `docker compose stop` |
 | **grok2api 导出** | `outputs/<run>/grok2api/tokens.txt` 仅 SSO token（一行一个） |
@@ -211,7 +211,7 @@ cd ~/Grok-Register/clearance && docker compose up -d && docker compose ps
 | Python 3.10+ + venv | Turnstile Playwright mint | 拿不到 token |
 | Playwright + CloakBrowser | 无头过 CF Turnstile | `timeout` / `iframes=0` |
 | Docker | 清障栈（强烈推荐） | 注册/邮箱/CF 更容易挂 |
-| CPA Management（可选） | `xai upload` / 自动上传 | 本地仍有 `CPA/*.json` |
+| CPA Management（可选） | `xai upload` / 自动 device 入库 | 本地仍有 `CPA/*.json` |
 
 ### 推荐硬件（运行时，非编译）
 
@@ -539,7 +539,7 @@ Remove-Item -Recurse bin/,, data/ -ErrorAction SilentlyContinue   # 连本地输
 | 命令 | 说明 |
 |------|------|
 | `xai start` | 交互：注册数量 + 并发线程(1–8) |
-| `xai start -t N --thread M` | 目标 N（1–10000）；线程 M（1–8）；**计数 = CPA 探活成功数** |
+| `xai start -t N --thread M` | 目标 N（1–10000）；线程 M（1–8）；启用自动入库时需 CPA 状态返回 `ok` |
 | `xai status` | 进度、线程、当前步骤 |
 | `xai logs` / `logs -f` | 最近日志 / 跟踪 |
 | `xai stop` | 停止注册机；`CLEARANCE_AUTO_STOP=1` 时同步停清障容器 |
@@ -568,14 +568,14 @@ Remove-Item -Recurse bin/,, data/ -ErrorAction SilentlyContinue   # 连本地输
 
 ```text
 清障预热 → S:Turnstile → P:邮箱+验证码 → C:注册拿 SSO
-       → OAuth → 整备 CPA JSON → 探活 → 写 CPA/
-       → (可选) 异步上传 Management API
+       → OAuth → 整备 CPA JSON → 探活
+       → (可选) CPA 创建 device flow → SSO 提交 action=allow → 轮询入库
+       → 写 CPA/
 ```
 
-- **TARGET**：仅 `CPA/` 探活成功数  
+- **TARGET**：未启用自动入库时为本地 CPA 探活成功数；启用后还要求远端状态为 `ok`
 - **座位**：`done + reserved ≤ target`（全局，非每线程）  
-- 自动上传失败**不**影响记成功  
-
+- 自动入库失败会写入 `discarded/`、释放座位并继续补号
 ---
 
 ## 边缘 / 清障
@@ -626,7 +626,7 @@ LITE_SOLVER_URL=http://127.0.0.1:5072
 
 ---
 
-## CPA 上传
+## CPA Management 入库
 
 ```env
 CPA_UPLOAD_ENABLED=1
@@ -634,9 +634,12 @@ CPA_MANAGEMENT_BASE=http://127.0.0.1:8317/v0/management
 CPA_MANAGEMENT_KEY=...
 ```
 
+- 自动路径调用 `GET /xai-auth-url?is_webui=true`，使用注册 SSO 完成 device 授权并强制提交 `action=allow`
+- 自动路径轮询 `GET /get-auth-status?state=...`；只有 `status=ok` 才记录为已入库
+- CPA 需使用支持 xAI device flow 的版本；旧版本缺少上述端点时自动入库会失败
+- 手动 `xai upload` 仍通过 `/auth-files` 导入已有 `CPA/*.json`
 - 宿主机跑 `grok` 必须用 `127.0.0.1`，不要写 `cli-proxy-api`  
-- 新版本会自动改写 docker 主机名并补 `/v0/management`  
-- 手动：`xai upload`
+- Management 根路径会自动补 `/v0/management`
 
 ---
 

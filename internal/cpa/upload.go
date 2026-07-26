@@ -2,6 +2,7 @@ package cpa
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,20 @@ type UploadResult struct {
 	Verified bool
 	Err      error
 }
+
+// XAIAuthSession describes a CPA-managed xAI device authorization.
+type XAIAuthSession struct {
+	URL       string
+	State     string
+	UserCode  string
+	ExpiresIn int
+}
+
+const (
+	xaiAuthPollInterval  = 2 * time.Second
+	xaiAuthDefaultExpiry = 30 * time.Minute
+	xaiAuthMaxPollErrors = 5
+)
 
 type Uploader struct {
 	cfg    UploadConfig
@@ -132,6 +147,149 @@ func (u *Uploader) Enabled() bool {
 		return false
 	}
 	return true
+}
+
+// StartXAIAuth asks CPA to create the device code it will later exchange and store.
+func (u *Uploader) StartXAIAuth(ctx context.Context) (XAIAuthSession, error) {
+	if !u.Enabled() {
+		return XAIAuthSession{}, fmt.Errorf("CPA management disabled")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	endpoint := strings.TrimRight(u.cfg.BaseURL, "/") + "/xai-auth-url?is_webui=true"
+	var payload struct {
+		Status    string `json:"status"`
+		Error     string `json:"error"`
+		URL       string `json:"url"`
+		State     string `json:"state"`
+		Flow      string `json:"flow"`
+		UserCode  string `json:"user_code"`
+		ExpiresIn int    `json:"expires_in"`
+	}
+	if err := u.getManagementJSON(ctx, endpoint, &payload); err != nil {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: %w", err)
+	}
+	if strings.EqualFold(strings.TrimSpace(payload.Status), "error") {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: %s", firstNonEmpty(payload.Error, "management returned error"))
+	}
+	if flow := strings.ToLower(strings.TrimSpace(payload.Flow)); flow != "" && flow != "device" {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: unexpected flow %q", payload.Flow)
+	}
+
+	authURL := strings.TrimSpace(payload.URL)
+	parsed, err := url.Parse(authURL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: invalid verification URL %q", authURL)
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "x.ai" && !strings.HasSuffix(host, ".x.ai") {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: untrusted verification host %q", host)
+	}
+	state := strings.TrimSpace(payload.State)
+	if state == "" {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: response missing state")
+	}
+	userCode := strings.TrimSpace(payload.UserCode)
+	if userCode == "" {
+		userCode = strings.TrimSpace(parsed.Query().Get("user_code"))
+	}
+	if userCode == "" {
+		return XAIAuthSession{}, fmt.Errorf("start CPA xAI device flow: response missing user_code")
+	}
+	return XAIAuthSession{
+		URL:       authURL,
+		State:     state,
+		UserCode:  userCode,
+		ExpiresIn: payload.ExpiresIn,
+	}, nil
+}
+
+// WaitXAIAuth polls CPA until it has exchanged and persisted the authorized device code.
+func (u *Uploader) WaitXAIAuth(ctx context.Context, session XAIAuthSession) error {
+	timeout := xaiAuthDefaultExpiry
+	if session.ExpiresIn > 0 {
+		timeout = time.Duration(session.ExpiresIn) * time.Second
+	}
+	return u.pollXAIAuthStatus(ctx, session.State, timeout, xaiAuthPollInterval)
+}
+
+func (u *Uploader) pollXAIAuthStatus(ctx context.Context, state string, timeout, interval time.Duration) error {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return fmt.Errorf("poll CPA xAI auth: state is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		timeout = xaiAuthDefaultExpiry
+	}
+	if interval <= 0 {
+		interval = xaiAuthPollInterval
+	}
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	timer := time.NewTimer(0)
+	defer timer.Stop()
+	consecutiveErrors := 0
+	for {
+		select {
+		case <-pollCtx.Done():
+			return fmt.Errorf("poll CPA xAI auth: %w", pollCtx.Err())
+		case <-timer.C:
+			endpoint := strings.TrimRight(u.cfg.BaseURL, "/") + "/get-auth-status?state=" + url.QueryEscape(state)
+			var payload struct {
+				Status string `json:"status"`
+				Error  string `json:"error"`
+			}
+			if err := u.getManagementJSON(pollCtx, endpoint, &payload); err != nil {
+				consecutiveErrors++
+				if consecutiveErrors >= xaiAuthMaxPollErrors {
+					return fmt.Errorf("poll CPA xAI auth status: %w", err)
+				}
+				timer.Reset(interval)
+				continue
+			}
+			consecutiveErrors = 0
+			switch strings.ToLower(strings.TrimSpace(payload.Status)) {
+			case "ok":
+				return nil
+			case "wait":
+				timer.Reset(interval)
+			case "error":
+				return fmt.Errorf("CPA xAI auth failed: %s", firstNonEmpty(strings.TrimSpace(payload.Error), "unknown error"))
+			default:
+				return fmt.Errorf("poll CPA xAI auth: unexpected status %q", payload.Status)
+			}
+		}
+	}
+}
+
+func (u *Uploader) getManagementJSON(ctx context.Context, endpoint string, dst any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	u.authHeaders(req)
+	req.Header.Set("Accept", "application/json")
+	resp, err := u.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("status=%d body=%s", resp.StatusCode, truncate(strings.TrimSpace(string(body)), 200))
+	}
+	if err := json.Unmarshal(body, dst); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
 }
 
 func UploadName(doc Document, tmpl string) string {
