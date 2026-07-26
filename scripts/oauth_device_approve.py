@@ -62,6 +62,22 @@ async def set_allow_action(page) -> None:
     )
 
 
+async def dismiss_cookie_overlay(page) -> None:
+    for selector in (
+        "#onetrust-accept-btn-handler",
+        "#onetrust-reject-all-handler",
+        ".onetrust-close-btn-handler",
+    ):
+        button = page.locator(selector)
+        try:
+            if await button.count() > 0 and await button.first.is_visible():
+                await button.first.click(force=True, timeout=3000)
+                await page.wait_for_timeout(150)
+                return
+        except Exception:
+            continue
+
+
 async def click_positive_button(page) -> bool:
     buttons = page.get_by_role("button")
     count = await buttons.count()
@@ -145,16 +161,8 @@ async def approve(*, url: str, sso: str, proxy: str, chrome: str, timeout: float
                 if ("/sign-in" in last_url or "/login" in last_url) and SIGN_IN_TEXT.search(body):
                     raise RuntimeError("SSO session was redirected to sign-in")
 
+                await dismiss_cookie_overlay(page)
                 clicked = await click_positive_button(page)
-                if not clicked:
-                    forms = page.locator("form")
-                    if await forms.count() > 0:
-                        try:
-                            await set_allow_action(page)
-                            await forms.first.evaluate("form => form.requestSubmit()")
-                            clicked = True
-                        except Exception:
-                            pass
                 await page.wait_for_timeout(800 if clicked else 400)
 
             raise RuntimeError(f"consent timed out at {last_url[:160]}")
