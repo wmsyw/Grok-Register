@@ -102,7 +102,7 @@ async def click_positive_button(page) -> bool:
             if NEGATIVE_BUTTON.search(label) or not POSITIVE_BUTTON.search(label):
                 continue
             await set_allow_action(page)
-            await button.click(force=True, timeout=8000)
+            await button.evaluate("element => element.click()")
             return True
         except Exception:
             continue
@@ -117,7 +117,7 @@ async def click_positive_button(page) -> bool:
             if NEGATIVE_BUTTON.search(label):
                 continue
             await set_allow_action(page)
-            await submit.click(force=True, timeout=8000)
+            await submit.evaluate("element => element.click()")
             return True
         except Exception:
             continue
