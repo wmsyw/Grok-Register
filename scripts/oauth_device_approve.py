@@ -76,6 +76,18 @@ async def dismiss_cookie_overlay(page) -> None:
                 return
         except Exception:
             continue
+    try:
+        await page.evaluate(
+            """() => {
+                for (const selector of ['#onetrust-consent-sdk', '#onetrust-banner-sdk', '.onetrust-pc-dark-filter']) {
+                    document.querySelector(selector)?.remove();
+                }
+                document.documentElement.style.overflow = 'auto';
+                document.body.style.overflow = 'auto';
+            }"""
+        )
+    except Exception:
+        pass
 
 
 async def click_positive_button(page) -> bool:
