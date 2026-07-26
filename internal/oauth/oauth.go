@@ -55,6 +55,7 @@ type Credential struct {
 type Client struct {
 	http  *http.Client
 	ua    string
+	proxy string
 	clear *clearance.Manager
 
 	// rate limit gate
@@ -97,6 +98,7 @@ func NewClient(proxy string, cm *clearance.Manager, baseCooldown time.Duration) 
 			},
 		},
 		ua:       DefaultUA,
+		proxy:    proxy,
 		clear:    cm,
 		baseCool: baseCooldown,
 		cooldown: baseCooldown,
@@ -956,13 +958,13 @@ func (c *Client) ExchangeOpts(ctx context.Context, opt ExchangeOptions) (Credent
 		// Plant SSO onto auth.x.ai domains before verify (user_code path).
 		if opt.Plant != nil && sso != "" && flow.VerificationURL != "" {
 			if ns, err := opt.Plant(ctx, sso, flow.VerificationURL); err != nil {
-				// non-fatal: ConfirmHTTP still sends Cookie: sso=
+				// non-fatal: device confirmation still sends the refreshed SSO.
 				last = err
 			} else if strings.TrimSpace(ns) != "" {
 				sso = strings.TrimSpace(ns)
 			}
 		}
-		if err := c.ConfirmHTTP(ctx, sso, flow); err != nil {
+		if err := c.Confirm(ctx, sso, flow); err != nil {
 			last = err
 			if errors.Is(err, ErrRateLimited) && attempt < 2 {
 				continue

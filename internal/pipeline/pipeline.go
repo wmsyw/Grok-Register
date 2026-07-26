@@ -912,7 +912,7 @@ func (e *Engine) enrollCPA(ctx context.Context, email, sso string) error {
 		VerificationURL: session.URL,
 		ExpiresIn:       session.ExpiresIn,
 	}
-	if err := e.oauth.ConfirmHTTP(ctx, sso, flow); err != nil {
+	if err := e.oauth.Confirm(ctx, sso, flow); err != nil {
 		return fmt.Errorf("authorize CPA xAI device: %w", err)
 	}
 	if err := e.uploader.WaitXAIAuth(ctx, session); err != nil {

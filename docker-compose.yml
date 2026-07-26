@@ -44,6 +44,7 @@ services:
       GROK_HOME: /data
       GROK_PYTHON: /opt/cloakbrowser-venv/bin/python
       GROK_TURNSTILE_SCRIPT: /usr/local/share/grok-reg/turnstile_mint.py
+      GROK_OAUTH_APPROVE_SCRIPT: /usr/local/share/grok-reg/oauth_device_approve.py
       CLOAKBROWSER_SUPPRESS_FONT_WARNING: "1"
       # 默认 idle 模式：容器长跑，配合 docker exec 用
       MODE: idle
