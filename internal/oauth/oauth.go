@@ -21,6 +21,11 @@ import (
 // ErrRateLimited is returned when auth.x.ai redirects with error=rate_limited.
 var ErrRateLimited = errors.New("rate_limited")
 
+// errOAuthEligibilityRefused marks xAI's terminal refusal after the consent UI
+// has already authorized the device. Retrying SSO or the same temp-mail account
+// cannot repair this server-side eligibility decision.
+var errOAuthEligibilityRefused = errors.New("xai oauth eligibility refused")
+
 const (
 	DiscoveryURL = "https://auth.x.ai/.well-known/openid-configuration"
 	ClientID     = "b1a00492-073a-47ea-816f-4c329264a828"
@@ -55,7 +60,6 @@ type Credential struct {
 type Client struct {
 	http  *http.Client
 	ua    string
-	proxy string
 	clear *clearance.Manager
 
 	// rate limit gate
@@ -98,7 +102,6 @@ func NewClient(proxy string, cm *clearance.Manager, baseCooldown time.Duration) 
 			},
 		},
 		ua:       DefaultUA,
-		proxy:    proxy,
 		clear:    cm,
 		baseCool: baseCooldown,
 		cooldown: baseCooldown,
@@ -760,11 +763,13 @@ func (c *Client) PollToken(ctx context.Context, flow DeviceFlow) (Credential, er
 		case "expired_token":
 			return Credential{}, fmt.Errorf("oauth_expired")
 		case "invalid_grant":
-			// Device not actually authorized (confirm incomplete / denied / SSO mismatch).
-			if errDesc != "" {
-				return Credential{}, fmt.Errorf("oauth_rejected: invalid_grant (%s) — device not authorized on auth.x.ai", errDesc)
+			if strings.EqualFold(strings.TrimSpace(errDesc), "Access denied") {
+				return Credential{}, fmt.Errorf("%w: invalid_grant (Access denied) — xAI rejected this account after device consent", errOAuthEligibilityRefused)
 			}
-			return Credential{}, fmt.Errorf("oauth_rejected: invalid_grant — device not authorized on auth.x.ai")
+			if errDesc != "" {
+				return Credential{}, fmt.Errorf("oauth_rejected: invalid_grant (%s)", errDesc)
+			}
+			return Credential{}, fmt.Errorf("oauth_rejected: invalid_grant")
 		default:
 			if errCode != "" {
 				if errDesc != "" {
@@ -958,13 +963,13 @@ func (c *Client) ExchangeOpts(ctx context.Context, opt ExchangeOptions) (Credent
 		// Plant SSO onto auth.x.ai domains before verify (user_code path).
 		if opt.Plant != nil && sso != "" && flow.VerificationURL != "" {
 			if ns, err := opt.Plant(ctx, sso, flow.VerificationURL); err != nil {
-				// non-fatal: device confirmation still sends the refreshed SSO.
+				// non-fatal: ConfirmHTTP still sends Cookie: sso=
 				last = err
 			} else if strings.TrimSpace(ns) != "" {
 				sso = strings.TrimSpace(ns)
 			}
 		}
-		if err := c.Confirm(ctx, sso, flow); err != nil {
+		if err := c.ConfirmHTTP(ctx, sso, flow); err != nil {
 			last = err
 			if errors.Is(err, ErrRateLimited) && attempt < 2 {
 				continue
@@ -990,6 +995,9 @@ func (c *Client) ExchangeOpts(ctx context.Context, opt ExchangeOptions) (Credent
 		cred, err := c.PollToken(ctx, flow)
 		if err != nil {
 			last = err
+			if errors.Is(err, errOAuthEligibilityRefused) {
+				return Credential{}, err
+			}
 			// invalid_grant: consent did not stick — new device flow
 			if attempt < 2 && strings.Contains(err.Error(), "invalid_grant") {
 				if opt.Refresh != nil {

@@ -1,6 +1,12 @@
 package oauth
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 func TestBuildApprovalFormAlwaysAllowsLocalizedConsent(t *testing.T) {
 	tests := []struct {
@@ -34,10 +40,22 @@ func TestBuildApprovalFormAlwaysAllowsLocalizedConsent(t *testing.T) {
 	}
 }
 
-func TestPrincipalFromConsentHTMLReadsEscapedRSC(t *testing.T) {
-	const want = "d8a5f3c1-760c-4f42-9978-32f7a8e61234"
-	html := `<script>self.__next_f.push([1,"{\"user\":{\"userId\":\"` + want + `\",\"email\":\"redacted@example.com\"}}"])</script>`
-	if got := principalFromConsentHTML(html); got != want {
-		t.Fatalf("principal=%q want %q", got, want)
+func TestPollTokenClassifiesEligibilityRefusal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid_grant","error_description":"Access denied"}`))
+	}))
+	defer server.Close()
+
+	client := &Client{http: server.Client(), ua: "test"}
+	_, err := client.PollToken(context.Background(), DeviceFlow{
+		DeviceCode:    "device-code",
+		ExpiresIn:     30,
+		Interval:      1,
+		TokenEndpoint: server.URL,
+	})
+	if !errors.Is(err, errOAuthEligibilityRefused) {
+		t.Fatalf("err=%v want eligibility refusal", err)
 	}
 }

@@ -59,13 +59,11 @@ RUN /opt/cloakbrowser-venv/bin/python -m cloakbrowser install
 # Install grok binary + turnstile mint helper.
 COPY --from=builder /out/xai /usr/local/bin/xai
 COPY scripts/turnstile_mint.py /usr/local/share/grok-reg/turnstile_mint.py
-COPY scripts/oauth_device_approve.py /usr/local/share/grok-reg/oauth_device_approve.py
 
 # Default env (override via docker-compose / -e).
 ENV GROK_HOME=/data \
     GROK_PYTHON=/opt/cloakbrowser-venv/bin/python \
     GROK_TURNSTILE_SCRIPT=/usr/local/share/grok-reg/turnstile_mint.py \
-    GROK_OAUTH_APPROVE_SCRIPT=/usr/local/share/grok-reg/oauth_device_approve.py \
     CLOAKBROWSER_SUPPRESS_FONT_WARNING=1 \
     PYTHONUNBUFFERED=1
 
