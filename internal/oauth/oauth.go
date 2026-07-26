@@ -422,9 +422,12 @@ func (c *Client) ConfirmHTTP(ctx context.Context, sso string, flow DeviceFlow) e
 	}
 	cookie := "sso=" + sso
 
-	// Warm: open verification page so auth.x.ai sees cookie session (optional).
+	// Warm: open verification page so auth.x.ai / accounts.x.ai receive the SSO cookie.
+	// Capture any Set-Cookie (session init) so subsequent posts carry a full cookie string.
 	if flow.VerificationURL != "" {
-		_, _, _ = c.getWithCookie(ctx, flow.VerificationURL, cookie)
+		if _, _, wh, werr := c.getWithCookie(ctx, flow.VerificationURL, cookie); werr == nil {
+			cookie = mergeSetCookies(cookie, wh)
+		}
 	}
 
 	// verify
@@ -535,7 +538,8 @@ func (c *Client) ConfirmHTTP(ctx context.Context, sso string, flow DeviceFlow) e
 			if isSignInRedirect(next) {
 				return fmt.Errorf("sso_rejected approve-redirect→sign-in")
 			}
-			if st, b, err := c.getWithCookie(ctx, next, cookie); err == nil {
+			if st, b, rh, err := c.getWithCookie(ctx, next, cookie); err == nil {
+				cookie = mergeSetCookies(cookie, rh)
 				if authorizedBody(b) || isDeviceDone(next) {
 					c.ClearRateLimit()
 					return nil
@@ -598,10 +602,10 @@ func mergeSetCookies(cookie string, h http.Header) string {
 	return out
 }
 
-func (c *Client) getWithCookie(ctx context.Context, rawURL, cookie string) (int, string, error) {
+func (c *Client) getWithCookie(ctx context.Context, rawURL, cookie string) (int, string, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
 	req.Header.Set("User-Agent", c.ua)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
@@ -611,20 +615,23 @@ func (c *Client) getWithCookie(ctx context.Context, rawURL, cookie string) (int,
 	req.Header.Set("Sec-Fetch-Dest", "document")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, "", err
+		return 0, "", nil, err
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<10))
 	_ = resp.Body.Close()
-	return resp.StatusCode, string(body), nil
+	return resp.StatusCode, string(body), resp.Header, nil
 }
 
 // loadConsentForm GETs consent page and extracts form fields (principal_id, csrf, etc.).
 // Returns fields, raw HTML (for RSC userId scrape), and cookie string.
 func (c *Client) loadConsentForm(ctx context.Context, consentURL, cookie string) (url.Values, string, string) {
-	st, html, err := c.getWithCookie(ctx, consentURL, cookie)
+	st, html, h, err := c.getWithCookie(ctx, consentURL, cookie)
 	if err != nil || st >= 400 {
 		return nil, "", cookie
 	}
+	// Merge Set-Cookie from the consent page (CSRF tokens, session cookies) so the
+	// subsequent approve POST carries a complete cookie string.
+	cookie = mergeSetCookies(cookie, h)
 	fields := parseHTMLFormFields(html)
 	return fields, html, cookie
 }

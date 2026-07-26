@@ -907,12 +907,25 @@ func (e *Engine) enrollCPA(ctx context.Context, email, sso string) error {
 		return err
 	}
 	e.opt.Log.Infof("[cpa] device 授权 %s code=%s", email, session.UserCode)
+
+	// Plant SSO onto auth.x.ai / accounts.x.ai via CreateCookieSetterLink before
+	// device verify, mirroring what ExchangeOpts does via the Plant hook.
+	// Non-fatal: ConfirmHTTP still sends Cookie: sso= directly as a fallback.
+	effectiveSSO := sso
+	if session.URL != "" {
+		if ns, _, perr := e.xai.PlantSSO(sso, session.URL); perr == nil && strings.TrimSpace(ns) != "" {
+			effectiveSSO = strings.TrimSpace(ns)
+		} else if perr != nil {
+			e.opt.Log.Debugf("[cpa] PlantSSO %s: %v (non-fatal)", email, perr)
+		}
+	}
+
 	flow := oauth.DeviceFlow{
 		UserCode:        session.UserCode,
 		VerificationURL: session.URL,
 		ExpiresIn:       session.ExpiresIn,
 	}
-	if err := e.oauth.ConfirmHTTP(ctx, sso, flow); err != nil {
+	if err := e.oauth.ConfirmHTTP(ctx, effectiveSSO, flow); err != nil {
 		return fmt.Errorf("authorize CPA xAI device: %w", err)
 	}
 	if err := e.uploader.WaitXAIAuth(ctx, session); err != nil {
