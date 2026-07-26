@@ -49,17 +49,47 @@ def has_display() -> bool:
     return bool((os.environ.get("DISPLAY") or "").strip() or (os.environ.get("WAYLAND_DISPLAY") or "").strip())
 
 
+def extract_user_id(html: str) -> str:
+    for pattern in (
+        r'"userId"\s*:\s*"([0-9a-fA-F-]{16,})"',
+        r'\\"userId\\"\s*:\s*\\"([0-9a-fA-F-]{16,})\\"',
+        r'"user_id"\s*:\s*"([0-9a-fA-F-]{16,})"',
+    ):
+        match = re.search(pattern, html)
+        if match:
+            return match.group(1)
+    return ""
+
+
 async def set_allow_action(page) -> None:
+    html = await page.content()
+    principal_id = extract_user_id(html)
+    principal_inputs = page.locator('input[name="principal_id"]')
+    if await principal_inputs.count() > 0 and not principal_id:
+        current = (await principal_inputs.first.input_value()).strip()
+        if not current:
+            raise RuntimeError("consent page did not expose principal_id")
+        principal_id = current
     await page.evaluate(
-        """() => {
+        """(principalId) => {
             for (const input of document.querySelectorAll('input[name="action"]')) {
                 input.value = 'allow';
                 input.setAttribute('value', 'allow');
                 input.dispatchEvent(new Event('input', {bubbles: true}));
                 input.dispatchEvent(new Event('change', {bubbles: true}));
             }
-        }"""
+            if (principalId) {
+                for (const input of document.querySelectorAll('input[name="principal_id"]')) {
+                    input.value = principalId;
+                    input.setAttribute('value', principalId);
+                    input.dispatchEvent(new Event('input', {bubbles: true}));
+                    input.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }
+        }""",
+        principal_id,
     )
+
 
 
 async def dismiss_cookie_overlay(page) -> None:

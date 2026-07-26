@@ -33,3 +33,11 @@ func TestBuildApprovalFormAlwaysAllowsLocalizedConsent(t *testing.T) {
 		})
 	}
 }
+
+func TestPrincipalFromConsentHTMLReadsEscapedRSC(t *testing.T) {
+	const want = "d8a5f3c1-760c-4f42-9978-32f7a8e61234"
+	html := `<script>self.__next_f.push([1,"{\"user\":{\"userId\":\"` + want + `\",\"email\":\"redacted@example.com\"}}"])</script>`
+	if got := principalFromConsentHTML(html); got != want {
+		t.Fatalf("principal=%q want %q", got, want)
+	}
+}
